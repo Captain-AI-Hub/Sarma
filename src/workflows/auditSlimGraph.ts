@@ -26,6 +26,7 @@ import type { SubagentSpec } from "@/workflows/auditSubagents";
 import type { ResolvedSkill } from "@/engine/models";
 import { getWriter } from "@langchain/langgraph";
 import type { TokenEstimator } from "@/context/tokenizer";
+import type { PersistentTerminalManager } from "@/resources/terminalTools";
 
 export const DEFAULT_MAX_VERIFY_FEEDBACK = 3;
 
@@ -89,6 +90,7 @@ export interface BuildAuditSlimGraphOptions {
   estimateText?: TokenEstimator;
   compileKwargs?: Record<string, unknown>;
   conversationId?: string;
+  terminalManager?: PersistentTerminalManager | null;
 }
 
 /** Build and compile the audit-slim StateGraph. */
@@ -121,6 +123,7 @@ export function buildAuditSlimGraph(
       maxPriorStageTokens: options.maxPriorStageTokens,
       estimateText: options.estimateText,
       conversationId: options.conversationId,
+      terminalManager: options.terminalManager,
     }) as unknown as NodeFn;
     g.addNode(name, nodeFn);
   }

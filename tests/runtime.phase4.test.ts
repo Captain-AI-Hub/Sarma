@@ -94,16 +94,30 @@ describe("middleware", () => {
 });
 
 describe("AgentRuntimeServices", () => {
-  test("create yields checkpointer + store", () => {
+  test("create yields checkpointer + store", async () => {
     const svc = AgentRuntimeServices.create();
     expect(svc.checkpointer).toBeDefined();
     expect(svc.store).toBeDefined();
     expect(svc.cache).toBeNull();
+    await svc.close();
   });
 
-  test("compileKwargs omits cache when null", () => {
+  test("compileKwargs omits cache when null", async () => {
     const svc = AgentRuntimeServices.create();
     const kwargs = svc.compileKwargs();
     expect(Object.keys(kwargs).sort()).toEqual(["checkpointer", "store"]);
+    await svc.close();
+  });
+
+  test("close stops persistent terminal sessions", async () => {
+    const svc = AgentRuntimeServices.create();
+    await svc.terminalManager.start({
+      command: process.execPath,
+      args: ["--eval", "setInterval(() => {}, 1000)"],
+      waitMs: 10,
+    });
+    expect(svc.terminalManager.list()).toContain("running");
+    await svc.close();
+    expect(svc.terminalManager.list()).toContain("no active terminals");
   });
 });

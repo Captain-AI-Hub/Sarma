@@ -35,12 +35,12 @@ export interface LiveMcpServer {
 }
 
 /** Start a streamable-HTTP MCP server on a random port via Bun.serve. */
-export async function startHttpMcpServer(): Promise<LiveMcpServer> {
+export async function startHttpMcpServer(port = 0): Promise<LiveMcpServer> {
   // Stateless JSON mode: the WebStandard transport cannot be reused across
   // requests, so build a fresh server+transport per request and dispose it
   // once the response is produced.
   const bun = Bun.serve({
-    port: 0,
+    port,
     async fetch(req) {
       const server = buildPingServer("mock-http");
       const transport = new WebStandardStreamableHTTPServerTransport({

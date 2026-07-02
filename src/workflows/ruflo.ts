@@ -14,6 +14,7 @@ import { tool } from "@langchain/core/tools";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { buildAgentMiddlewareForModel } from "@/runtime/middleware";
+import type { PersistentTerminalManager } from "@/resources/terminalTools";
 
 export const RUFLO_SYSTEM_PROMPT = `You are Sarma running in Ruflo mode.
 
@@ -52,7 +53,7 @@ export function buildRufloPrompt(basePrompt: string): string {
 export function buildDelegateTool(
   model: BaseChatModel,
   tools: StructuredToolInterface[],
-  options: { conversationId?: string } = {},
+  options: { conversationId?: string; terminalManager?: PersistentTerminalManager | null } = {},
 ): StructuredToolInterface {
   const delegateTask = tool(
     async ({
@@ -81,7 +82,10 @@ ${SUBAGENT_RESULT_TEMPLATE}
         model,
         tools,
         systemPrompt: prompt,
-        middleware: buildAgentMiddlewareForModel(model, { conversationId: options.conversationId }),
+        middleware: buildAgentMiddlewareForModel(model, {
+          conversationId: options.conversationId,
+          terminalManager: options.terminalManager,
+        }),
       });
       let result: { messages?: { content?: unknown }[] };
       try {

@@ -74,12 +74,13 @@ export interface McpServerInit {
   sseReadTimeout: number;
 }
 
-function parseJson<T>(raw: string, fallback: T | undefined): T | undefined {
+function parseJson<T>(raw: string, fallback: T | undefined, fieldName: string): T | undefined {
   if (!raw) return fallback;
   try {
     return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
+  } catch (exc) {
+    const message = exc instanceof Error ? exc.message : String(exc);
+    throw new Error(`Invalid ${fieldName} JSON: ${message}`);
   }
 }
 
@@ -133,13 +134,13 @@ export class McpServerDTO {
     const config: Record<string, unknown> = { transport };
     if (transport === "stdio") {
       config.command = this.command;
-      config.args = parseJson<unknown[]>(this.args, []) ?? [];
+      config.args = parseJson<unknown[]>(this.args, [], "args") ?? [];
       // The MCP SDK defaults stderr to "inherit", which lets server startup
       // logs write directly into the TUI screen. Drop stderr unless Sarma grows
       // an explicit log capture surface for it.
       config.stderr = "ignore";
       if (this.env) {
-        const env = parseJson<Record<string, string>>(this.env, undefined);
+        const env = parseJson<Record<string, string>>(this.env, undefined, "env");
         if (env !== undefined) config.env = env;
       }
       if (this.cwd) config.cwd = this.cwd;
@@ -147,7 +148,7 @@ export class McpServerDTO {
     } else {
       config.url = this.url;
       if (this.headers) {
-        const headers = parseJson<Record<string, string>>(this.headers, undefined);
+        const headers = parseJson<Record<string, string>>(this.headers, undefined, "headers");
         if (headers !== undefined) config.headers = headers;
       }
       // Pool-level connect-timeout hint (seconds). Stripped by the adapter.

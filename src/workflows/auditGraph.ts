@@ -30,6 +30,8 @@ import { AUDIT_SUBAGENTS, AUDIT_SUBAGENT_ORDER, type SubagentSpec } from "@/work
 import type { ResolvedSkill } from "@/engine/models";
 import { buildAgentMiddlewareForModel } from "@/runtime/middleware";
 import type { TokenEstimator } from "@/context/tokenizer";
+import { filterToolsByMcpServers, filterToolsByPrefixes, filterToolsBySkill } from "@/runtime/toolPolicy";
+import type { PersistentTerminalManager } from "@/resources/terminalTools";
 
 export const DEFAULT_MAX_GAPFILL = 3;
 export const DEFAULT_MAX_FEEDBACK = 2;
@@ -61,87 +63,6 @@ export const AuditState = Annotation.Root({
   current_stage: Annotation<string>({ reducer: (_a, b) => b, default: () => "" }),
 });
 export type AuditStateType = typeof AuditState.State;
-
-const BUILTIN_TOOL_NAMES = new Set([
-  "rag_search",
-  "web_search",
-  "fetch_url",
-  "http_exchange",
-  "packet_exchange",
-]);
-
-function isBuiltinTool(tool: StructuredToolInterface): boolean {
-  return BUILTIN_TOOL_NAMES.has(tool.name ?? "");
-}
-
-function toolNameMatches(toolName: string, prefix: string): boolean {
-  return (
-    toolName.startsWith(prefix) ||
-    toolName.includes(`_${prefix}`) ||
-    toolName.includes(`__${prefix}`) ||
-    toolName.includes(`.${prefix}`) ||
-    toolName.includes(`:${prefix}`)
-  );
-}
-
-/** Filter tools whose name starts with any of the given prefixes. */
-function filterToolsByPrefix(
-  allTools: StructuredToolInterface[],
-  prefixes: string[] | undefined,
-): StructuredToolInterface[] {
-  if (!prefixes || prefixes.length === 0 || allTools.length === 0) {
-    return [...allTools];
-  }
-  return allTools.filter(
-    (t) => isBuiltinTool(t) || prefixes.some((p) => toolNameMatches(t.name ?? "", p)),
-  );
-}
-
-function filterToolsByMcp(
-  allTools: StructuredToolInterface[],
-  allowedServers: string[] | null | undefined,
-): StructuredToolInterface[] {
-  if (allowedServers === null || allowedServers === undefined) {
-    return [...allTools];
-  }
-  const builtins = allTools.filter(isBuiltinTool);
-  if (allowedServers.length === 0) {
-    return builtins;
-  }
-  const result: StructuredToolInterface[] = [];
-  for (const tool of allTools) {
-    if (isBuiltinTool(tool)) {
-      result.push(tool);
-      continue;
-    }
-    const name = tool.name ?? "";
-    const matches = allowedServers.some(
-      (server) =>
-        name === server ||
-        name.startsWith(`${server}_`) ||
-        name.startsWith(`${server}__`) ||
-        name.startsWith(`${server}.`) ||
-        name.startsWith(`${server}:`),
-    );
-    if (matches) result.push(tool);
-  }
-  return result;
-}
-
-function filterToolsBySkill(
-  allTools: StructuredToolInterface[],
-  skill: ResolvedSkill | null | undefined,
-): StructuredToolInterface[] {
-  if (!skill) return [...allTools];
-  let result = [...allTools];
-  if (skill.toolAllowlist !== null) {
-    result = result.filter((t) => isBuiltinTool(t) || skill.toolAllowlist!.has(t.name ?? ""));
-  }
-  if (skill.toolDenylist !== null) {
-    result = result.filter((t) => isBuiltinTool(t) || !skill.toolDenylist!.has(t.name ?? ""));
-  }
-  return result;
-}
 
 function combinePromptParts(...parts: (string | null | undefined)[]): string {
   return parts.map((p) => (p ?? "").trim()).filter(Boolean).join("\n\n---\n\n");
@@ -363,6 +284,7 @@ interface SubagentNodeOptions {
   allowedMcpServers?: string[] | null;
   skill?: ResolvedSkill | null;
   conversationId?: string;
+  terminalManager?: PersistentTerminalManager | null;
 }
 
 type NodeFn = (
@@ -393,8 +315,8 @@ export function makeSubagentNode(
   options: SubagentNodeOptions = {},
 ): NodeFn {
   const model = options.subagentModels?.[name] ?? spec.model ?? defaultModel;
-  let tools = filterToolsByMcp(allTools, options.allowedMcpServers);
-  tools = filterToolsByPrefix(tools, spec.toolPrefixes);
+  let tools = filterToolsByMcpServers(allTools, options.allowedMcpServers);
+  tools = filterToolsByPrefixes(tools, spec.toolPrefixes);
   tools = filterToolsBySkill(tools, options.skill);
 
   const prompt = buildSubagentPrompt(spec.systemPrompt, options.skill);
@@ -403,7 +325,10 @@ export function makeSubagentNode(
     model,
     tools,
     systemPrompt: prompt,
-    middleware: buildAgentMiddlewareForModel(model, { conversationId: options.conversationId }),
+    middleware: buildAgentMiddlewareForModel(model, {
+      conversationId: options.conversationId,
+      terminalManager: options.terminalManager,
+    }),
   });
 
   const node: NodeFn = async (state, config) => {
@@ -566,6 +491,7 @@ export interface BuildAuditGraphOptions {
   estimateText?: TokenEstimator;
   compileKwargs?: Record<string, unknown>;
   conversationId?: string;
+  terminalManager?: PersistentTerminalManager | null;
 }
 
 /** Build and compile the audit pipeline StateGraph. */
@@ -605,6 +531,7 @@ export function buildAuditGraph(
       maxPriorStageTokens: options.maxPriorStageTokens,
       estimateText: options.estimateText,
       conversationId: options.conversationId,
+      terminalManager: options.terminalManager,
     });
     g.addNode(name, nodeFn);
   }

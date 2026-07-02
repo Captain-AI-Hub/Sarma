@@ -13,6 +13,7 @@ import pc from "picocolors";
 installDebugHandlers();
 
 async function main(): Promise<void> {
+  const packageJson = (await Bun.file(new URL("../package.json", import.meta.url)).json()) as { version?: string };
   await yargs(hideBin(process.argv))
     .scriptName("sarma")
     .usage("$0 [options]", "Sarma — AI-powered vulnerability audit agent (CLI).")
@@ -121,7 +122,7 @@ async function main(): Promise<void> {
     .strict()
     .help()
     .alias("help", "h")
-    .version("0.1.2")
+    .version(packageJson.version ?? "0.0.0")
     .parseAsync();
 }
 

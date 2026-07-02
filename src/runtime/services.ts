@@ -2,6 +2,7 @@
 
 import { MemorySaver, InMemoryStore } from "@langchain/langgraph";
 import type { BaseCheckpointSaver } from "@langchain/langgraph";
+import { PersistentTerminalManager } from "@/resources/terminalTools";
 
 /**
  * Session-owned LangChain runtime services.
@@ -13,15 +14,18 @@ export class AgentRuntimeServices {
   readonly checkpointer: BaseCheckpointSaver;
   readonly store: InMemoryStore;
   readonly cache: unknown | null;
+  readonly terminalManager: PersistentTerminalManager;
 
   constructor(
     checkpointer: BaseCheckpointSaver,
     store: InMemoryStore,
     cache: unknown | null = null,
+    terminalManager: PersistentTerminalManager = new PersistentTerminalManager(),
   ) {
     this.checkpointer = checkpointer;
     this.store = store;
     this.cache = cache;
+    this.terminalManager = terminalManager;
   }
 
   static create(): AgentRuntimeServices {
@@ -31,6 +35,7 @@ export class AgentRuntimeServices {
       // Cache is intentionally disabled until target-binary identity and
       // mutable IDA state are part of cache keys.
       null,
+      new PersistentTerminalManager(),
     );
   }
 
@@ -47,5 +52,13 @@ export class AgentRuntimeServices {
   /** Options passed to `createAgent` (checkpointer + store + optional cache). */
   createAgentKwargs(): { checkpointer: BaseCheckpointSaver; store: InMemoryStore; cache?: unknown } {
     return this.compileKwargs();
+  }
+
+  setConversationId(conversationId: string): void {
+    this.terminalManager.setConversationId(conversationId);
+  }
+
+  async close(): Promise<void> {
+    await this.terminalManager.closeAll();
   }
 }

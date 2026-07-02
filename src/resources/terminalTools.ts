@@ -73,8 +73,8 @@ export interface TerminalStopArgs {
 
 export class PersistentTerminalManager {
   private readonly sessions = new Map<string, TerminalSession>();
-  private readonly conversationId: string;
-  private readonly logRoot: string | null;
+  private conversationId: string;
+  private logRoot: string | null;
 
   constructor(
     private readonly workspaceRoot = process.cwd(),
@@ -83,6 +83,11 @@ export class PersistentTerminalManager {
     this.conversationId = sanitizePathPart(options.conversationId ?? "");
     this.logRoot = options.logRoot ?? (this.conversationId ? path.join(paths.localDir(), this.conversationId, "terminals") : null);
     allManagers.add(this);
+  }
+
+  setConversationId(conversationId: string): void {
+    this.conversationId = sanitizePathPart(conversationId);
+    this.logRoot = this.conversationId ? path.join(paths.localDir(), this.conversationId, "terminals") : null;
   }
 
   async start(args: TerminalStartArgs): Promise<string> {
@@ -214,7 +219,36 @@ export class PersistentTerminalManager {
     return lines.join("\n");
   }
 
-  closeAll(): void {
+  async closeAll(): Promise<void> {
+    const sessions = [...this.sessions.values()];
+    if (sessions.length === 0) {
+      allManagers.delete(this);
+      return;
+    }
+    for (const session of sessions) {
+      if (!session.exitState) {
+        try {
+          session.proc.kill("SIGTERM");
+        } catch {
+          // Best-effort cleanup.
+        }
+      }
+    }
+    await delay(DEFAULT_WAIT_MS);
+    for (const session of sessions) {
+      if (!session.exitState) {
+        try {
+          session.proc.kill("SIGKILL");
+        } catch {
+          // Process may have exited between checks.
+        }
+      }
+    }
+    this.sessions.clear();
+    allManagers.delete(this);
+  }
+
+  closeAllSync(): void {
     for (const session of this.sessions.values()) {
       if (!session.exitState) {
         try {
@@ -308,7 +342,7 @@ export class PersistentTerminalManager {
 const defaultManager = new PersistentTerminalManager();
 
 process.once("exit", () => {
-  for (const manager of [...allManagers]) manager.closeAll();
+  for (const manager of [...allManagers]) manager.closeAllSync();
 });
 
 export function buildPersistentTerminalTools(

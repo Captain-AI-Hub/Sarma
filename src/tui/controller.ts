@@ -10,7 +10,6 @@ import { createSignal } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { HumanMessage } from "@langchain/core/messages";
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 import {
@@ -28,7 +27,6 @@ import {
   saveModels,
   saveRagKnowledgeBases,
   saveRagModel,
-  tryParseContextWindow,
 } from "@/config";
 import { Session } from "@/session";
 import { Store } from "@/store";
@@ -43,6 +41,16 @@ import { type TranscriptItem, type ToolEntry, type SubagentEntry, nextId } from 
 import { debugEnabled, debugLog, debugLogFile, setDebugEnabled } from "@/debug";
 import * as paths from "@/paths";
 import { getWorkflowMeta } from "@/workflows";
+import {
+  knowledgeBaseChromaPath,
+  messageContentText,
+  parseContextSize,
+  truncateStatus,
+  upsertKnowledgeBase,
+} from "@/tui/controllerHelpers";
+import { providerFromModelDraft as buildProviderFromModelDraft } from "@/tui/modelConfigHelpers";
+
+export { parseContextSize };
 
 export interface GraphStageView {
   name: string;
@@ -217,55 +225,6 @@ export type PluginSection = "mcp" | "skills";
 export type PluginStep = "browse" | "mcp-fields" | "skill-fields";
 export type RagSection = "model" | "knowledge" | "search";
 export type RagStep = "browse" | "model-fields" | "kb-fields" | "search-fields";
-
-export function parseContextSize(raw: string): number | null {
-  return tryParseContextWindow(raw);
-}
-
-function truncateStatus(value: string, max: number): string {
-  const compact = value.replace(/\s+/g, " ").trim();
-  return compact.length > max ? `${compact.slice(0, Math.max(0, max - 1))}...` : compact;
-}
-
-function messageContentText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content.map((part) => {
-      if (typeof part === "string") return part;
-      if (part && typeof part === "object" && "text" in part) {
-        return String((part as { text?: unknown }).text ?? "");
-      }
-      return "";
-    }).join("");
-  }
-  return content === null || content === undefined ? "" : String(content);
-}
-
-function safePathName(name: string): string {
-  const safe = name.trim().replace(/[^A-Za-z0-9_.-]+/g, "-").replace(/^-+|-+$/g, "");
-  return safe || "knowledge-base";
-}
-
-function expandUserPath(path: string): string {
-  if (path === "~" || path.startsWith("~/") || path.startsWith("~\\")) {
-    return resolve(join(homedir(), path.slice(1)));
-  }
-  return resolve(path);
-}
-
-function knowledgeBaseChromaPath(kb: KnowledgeBaseConfig): string {
-  if (kb.chromaPath.trim()) return expandUserPath(kb.chromaPath);
-  return join(paths.ragChromaDir(), safePathName(kb.name));
-}
-
-function upsertKnowledgeBase(
-  knowledgeBases: KnowledgeBaseConfig[],
-  knowledgeBase: KnowledgeBaseConfig,
-): void {
-  const index = knowledgeBases.findIndex((kb) => kb.name === knowledgeBase.name);
-  if (index >= 0) knowledgeBases[index] = knowledgeBase;
-  else knowledgeBases.push(knowledgeBase);
-}
 
 // Stage panels are derived from the real subagent node names so the side panel
 // matches what the graph actually runs. Hardcoding a guessed list (e.g.
@@ -2845,38 +2804,9 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
   }
 
   function providerFromModelDraft(): { provider: ProviderConfig | null; error: string | null; name: string; modelId: string; ctx: number } {
-    const name = modelDraft.name.trim() || "default";
-    const modelId = modelDraft.modelName.trim();
-    if (!modelId) return { provider: null, error: "Model ID is required.", name, modelId, ctx: 0 };
-    const ctx = parseContextSize(modelDraft.maxContextTokens);
-    if (ctx === null) {
-      return {
-        provider: null,
-        error: "Context size must be a positive number (e.g. 128000, 200K, 1M).",
-        name,
-        modelId,
-        ctx: 0,
-      };
-    }
     const oldName = editingModelName() || modelDraft.name.trim();
-    const existingProvider = config.models.find((model) => model.name === oldName) ?? new ProviderConfig({ name });
-    return {
-      provider: new ProviderConfig({
-        name,
-        modelName: modelId,
-        apiMode: API_MODES.includes(modelDraft.apiMode) ? modelDraft.apiMode : "openai_compatible",
-        baseUrl: modelDraft.baseUrl.trim(),
-        apiKey: modelDraft.apiKey,
-        temperature: existingProvider.temperature,
-        topP: existingProvider.topP,
-        maxContextTokens: ctx,
-        enabled: parseBool(modelDraft.enabled),
-      }),
-      error: null,
-      name,
-      modelId,
-      ctx,
-    };
+    const existingProvider = config.models.find((model) => model.name === oldName) ?? null;
+    return buildProviderFromModelDraft(modelDraft, existingProvider);
   }
 
   async function testModel(): Promise<string> {

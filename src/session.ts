@@ -31,6 +31,7 @@ import { createTokenEstimator } from "@/context/tokenizer";
 import { type CliConfig, type ProviderConfig } from "@/config";
 import { RuntimePolicyResolver } from "@/runtime/resolver";
 import { AgentRuntimeServices } from "@/runtime/services";
+import { runtimeStaticToolCount } from "@/runtime/toolPolicy";
 import { Store } from "@/store";
 import { defaultWorkflowName, getWorkflowMeta } from "@/workflows";
 
@@ -126,9 +127,11 @@ export class Session {
   async restartRuntime(): Promise<void> {
     this.cancelCurrentRun();
     await this.pool.disconnect();
+    await this.runtimeServices.close();
     this.pool = new McpClientPool();
     this.modelFactory = new ModelFactory();
     this.runtimeServices = AgentRuntimeServices.create();
+    if (this._conversationId) this.runtimeServices.setConversationId(this._conversationId);
     this.factory = new AgentFactory(this.pool, {
       modelFactory: this.modelFactory,
       runtimeServices: this.runtimeServices,
@@ -154,6 +157,7 @@ export class Session {
     );
     this._history = [];
     this.resetGraphState();
+    this.runtimeServices.setConversationId(this._conversationId);
     return this._conversationId;
   }
 
@@ -172,6 +176,7 @@ export class Session {
           reasoningContent: m.reasoning ?? null,
         }),
     );
+    this.runtimeServices.setConversationId(this._conversationId);
     return true;
   }
 
@@ -427,14 +432,13 @@ export class Session {
   }
 
   private static builtinAndMiddlewareToolCount(rag: { knowledgeBases: { enabled: boolean; name: string }[] }): number {
-    const builtin = 3 + (rag.knowledgeBases.some((kb) => kb.enabled && kb.name) ? 1 : 0);
-    const middleware = 13;
-    return builtin + middleware;
+    return runtimeStaticToolCount(rag);
   }
 
   async close(): Promise<void> {
     this.cancelCurrentRun();
     await this.pool.disconnect();
+    await this.runtimeServices.close();
   }
 }
 

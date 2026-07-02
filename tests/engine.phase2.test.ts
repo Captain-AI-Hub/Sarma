@@ -14,6 +14,7 @@ import {
 import { ResolvedSkill } from "@/engine/models";
 import { AgentFactory } from "@/engine/agentFactory";
 import { makeAgentRunConfig } from "@/engine/models";
+import { filterToolsBySkill } from "@/runtime/toolPolicy";
 
 function provider(overrides: Partial<ConstructorParameters<typeof ModelProviderDTO>[0]> = {}) {
   return new ModelProviderDTO({
@@ -73,18 +74,21 @@ describe("McpClientPool", () => {
     expect(tools).toEqual([]);
     expect(pool.isConnected).toBe(true);
   });
+});
 
-  test("filterTools applies allow then deny", () => {
-    const pool = new McpClientPool();
+describe("ToolPolicy", () => {
+  test("filterToolsBySkill applies allow then deny", () => {
     const fakeTools = [
       { name: "ida__decompile" },
       { name: "ida__disasm" },
       { name: "ida__patch_bytes" },
     ] as never[];
-    const allowed = pool.filterTools(
+    const allowed = filterToolsBySkill(
       fakeTools,
-      new Set(["ida__decompile", "ida__disasm", "ida__patch_bytes"]),
-      new Set(["ida__patch_bytes"]),
+      new ResolvedSkill({
+        toolAllowlist: new Set(["ida__decompile", "ida__disasm", "ida__patch_bytes"]),
+        toolDenylist: new Set(["ida__patch_bytes"]),
+      }),
     );
     expect(allowed.map((t) => (t as { name: string }).name)).toEqual([
       "ida__decompile",
@@ -93,9 +97,8 @@ describe("McpClientPool", () => {
   });
 
   test("null allowlist allows all", () => {
-    const pool = new McpClientPool();
     const fakeTools = [{ name: "a" }, { name: "b" }] as never[];
-    expect(pool.filterTools(fakeTools).length).toBe(2);
+    expect(filterToolsBySkill(fakeTools, null).length).toBe(2);
   });
 });
 
@@ -139,6 +142,18 @@ describe("McpServerDTO.toLangchainConfig() — JS adapter contract", () => {
     expect(cfg.transport).toBe("stdio");
     expect(cfg.command).toBe("node");
     expect(cfg.args).toEqual([]);
+  });
+
+  test("malformed stdio args JSON throws a diagnostic error", () => {
+    expect(() => mcpServer({ transport: "stdio", command: "node", args: "[bad" }).toLangchainConfig()).toThrow(
+      "Invalid args JSON",
+    );
+  });
+
+  test("malformed http headers JSON throws a diagnostic error", () => {
+    expect(() => mcpServer({ transport: "http", headers: "{bad" }).toLangchainConfig()).toThrow(
+      "Invalid headers JSON",
+    );
   });
 
   // Constructing MultiServerMCPClient runs the adapter's zod validation, so an
@@ -221,10 +236,62 @@ describe("McpClientPool.connect() — live servers (all transports)", () => {
       await pool.disconnect();
     }
   });
+
+  test("degraded mode keeps healthy servers when another server fails", async () => {
+    const srv = await startHttpMcpServer();
+    const pool = new McpClientPool();
+    try {
+      const good = mcpServer({ name: "good", transport: "http", url: srv.url });
+      const bad = mcpServer({ name: "bad", transport: "http", url: "http://127.0.0.1:1/mcp", timeout: 0.1 });
+      const tools = await pool.connect({
+        good: good.toLangchainConfig(),
+        bad: bad.toLangchainConfig(),
+      });
+      expect(tools.map((t) => t.name)).toEqual(["good__ping"]);
+      expect(pool.isConnected).toBe(true);
+      expect(pool.serverStatuses.find((s) => s.name === "good")?.connected).toBe(true);
+      const badStatus = pool.serverStatuses.find((s) => s.name === "bad");
+      expect(badStatus?.connected).toBe(false);
+      expect(badStatus?.error).not.toBe("");
+    } finally {
+      await pool.disconnect();
+      await srv.close();
+    }
+  });
+
+  test("degraded same-fingerprint reconnect retries previously failed servers", async () => {
+    const first = await startHttpMcpServer();
+    const reservation = await startHttpMcpServer();
+    const retryUrl = reservation.url;
+    const retryPort = Number(new URL(retryUrl).port);
+    await reservation.close();
+    const pool = new McpClientPool();
+    try {
+      const dto = mcpServer({ name: "svc", transport: "http", url: first.url });
+      const configs = {
+        svc: dto.toLangchainConfig(),
+        bad: mcpServer({ name: "bad", transport: "http", url: retryUrl, timeout: 0.1 }).toLangchainConfig(),
+      };
+      await pool.connect(configs);
+      expect(pool.serverStatuses.find((s) => s.name === "bad")?.connected).toBe(false);
+
+      const second = await startHttpMcpServer(retryPort);
+      try {
+        const tools = await pool.connect(configs);
+        expect(tools.map((t) => t.name).sort()).toEqual(["bad__ping", "svc__ping"]);
+        expect(pool.serverStatuses.every((status) => status.connected)).toBe(true);
+      } finally {
+        await second.close();
+      }
+    } finally {
+      await pool.disconnect();
+      await first.close();
+    }
+  });
 });
 
 describe("AgentFactory tool policy", () => {
-  test("skill allowlist filters MCP tools before built-ins are appended", async () => {
+  test("skill allowlist filters MCP and built-in tools through one policy", async () => {
     const factory = new AgentFactory(new McpClientPool(), { runtimeServices: null });
     const skill = new ResolvedSkill({
       name: "web-only",
@@ -239,7 +306,7 @@ describe("AgentFactory tool policy", () => {
         skill,
       }),
     );
-    expect(tools.map((t) => t.name)).toEqual(["web_search", "fetch_url", "http_exchange", "packet_exchange"]);
+    expect(tools.map((t) => t.name)).toEqual(["web_search"]);
   });
 
   test("RAG path changes invalidate cached agents", async () => {

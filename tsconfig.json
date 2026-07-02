@@ -6,7 +6,7 @@
     "types": ["bun"],
     "jsx": "preserve",
     "jsxImportSource": "@opentui/solid",
-    "noUncheckedIndexedAccess": false,
+    "noUncheckedIndexedAccess": true,
     "strict": true,
     "skipLibCheck": true,
     "paths": {

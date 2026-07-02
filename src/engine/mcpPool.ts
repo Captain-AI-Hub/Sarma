@@ -80,7 +80,7 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
  * provides health-check / reconnect on failure.
  */
 export class McpClientPool {
-  private client: MultiServerMCPClient | null = null;
+  private clients: MultiServerMCPClient[] = [];
   private serverConfigs: ServerConfigs = {};
   private fingerprint = "";
   private toolList: StructuredToolInterface[] = [];
@@ -107,7 +107,7 @@ export class McpClientPool {
    */
   async connect(serverConfigs: ServerConfigs): Promise<StructuredToolInterface[]> {
     const fingerprint = configFingerprint(serverConfigs);
-    if (this.connected && fingerprint && fingerprint === this.fingerprint) {
+    if (this.connected && fingerprint && fingerprint === this.fingerprint && !this.hasFailedServers()) {
       return this.toolList;
     }
 
@@ -128,37 +128,24 @@ export class McpClientPool {
       return this.toolList;
     }
 
-    try {
-      this.client = new MultiServerMCPClient({
-        mcpServers: serverConfigs as never,
-        prefixToolNameWithServerName: true,
-        additionalToolNamePrefix: "",
-        throwOnLoadError: true,
-      });
-      this.toolList = (await withTimeout(
-        this.client.getTools(),
-        connectTimeout(serverConfigs),
-      )) as StructuredToolInterface[];
-      this.connected = true;
-      this.statuses = new Map(
-        Object.keys(serverConfigs).map((name) => [
-          name,
-          { name, connected: true, toolCount: this.countServerTools(name), error: "" },
-        ]),
-      );
-      return this.toolList;
-    } catch (exc) {
-      await this.disconnect();
-      this.serverConfigs = { ...serverConfigs };
-      const message = exc instanceof Error ? exc.message : String(exc);
-      this.statuses = new Map(
-        Object.keys(serverConfigs).map((name) => [
-          name,
-          { name, connected: false, toolCount: 0, error: message },
-        ]),
-      );
-      throw new McpConnectionError(Object.keys(serverConfigs).join(", "), message);
-    }
+    const results = await Promise.all(
+      Object.entries(serverConfigs).map(([name, config]) => connectOneServer(name, config)),
+    );
+    const tools = results.flatMap((result) => result.tools);
+    const statuses = new Map(results.map((result) => [result.status.name, result.status]));
+    const errors = results.filter((result) => result.error).map((result) => result.error!);
+    const successCount = results.filter((result) => result.client !== null).length;
+    this.clients = results.flatMap((result) => (result.client ? [result.client] : []));
+
+    this.statuses = statuses;
+    this.toolList = tools;
+    this.connected = successCount > 0;
+    if (this.connected) return this.toolList;
+
+    await this.disconnect();
+    this.serverConfigs = { ...serverConfigs };
+    this.statuses = statuses;
+    throw new McpConnectionError(Object.keys(serverConfigs).join(", "), errors.join("; "));
   }
 
   /** Reconnect using the last known server configs. */
@@ -169,15 +156,14 @@ export class McpClientPool {
 
   /** Cleanly close all MCP connections. */
   async disconnect(): Promise<void> {
-    if (this.client !== null) {
+    for (const client of this.clients) {
       try {
-        await this.client.close();
+        await client.close();
       } catch {
         /* best-effort close */
-      } finally {
-        this.client = null;
       }
     }
+    this.clients = [];
     this.toolList = [];
     this.connected = false;
     this.fingerprint = "";
@@ -189,23 +175,48 @@ export class McpClientPool {
     );
   }
 
-  /** Apply allow/deny lists to a set of tools. */
-  filterTools(
-    tools: StructuredToolInterface[],
-    allowlist: Set<string> | null = null,
-    denylist: Set<string> | null = null,
-  ): StructuredToolInterface[] {
-    let result = tools;
-    if (allowlist !== null) {
-      result = result.filter((t) => allowlist.has(t.name));
-    }
-    if (denylist !== null) {
-      result = result.filter((t) => !denylist.has(t.name));
-    }
-    return result;
+  private hasFailedServers(): boolean {
+    return [...this.statuses.values()].some((status) => !status.connected);
   }
+}
 
-  private countServerTools(serverName: string): number {
-    return this.toolList.filter((t) => toolBelongsToServer(t.name ?? "", serverName)).length;
+interface ServerConnectResult {
+  client: MultiServerMCPClient | null;
+  tools: StructuredToolInterface[];
+  status: McpServerStatus;
+  error: string | null;
+}
+
+async function connectOneServer(name: string, config: Record<string, unknown>): Promise<ServerConnectResult> {
+  try {
+    const client = new MultiServerMCPClient({
+      mcpServers: { [name]: config } as never,
+      prefixToolNameWithServerName: true,
+      additionalToolNamePrefix: "",
+      throwOnLoadError: true,
+    });
+    const tools = (await withTimeout(
+      client.getTools(),
+      connectTimeout({ [name]: config }),
+    )) as StructuredToolInterface[];
+    return {
+      client,
+      tools,
+      status: {
+        name,
+        connected: true,
+        toolCount: tools.filter((tool) => toolBelongsToServer(tool.name ?? "", name)).length,
+        error: "",
+      },
+      error: null,
+    };
+  } catch (exc) {
+    const message = exc instanceof Error ? exc.message : String(exc);
+    return {
+      client: null,
+      tools: [],
+      status: { name, connected: false, toolCount: 0, error: message },
+      error: `${name}: ${message}`,
+    };
   }
 }

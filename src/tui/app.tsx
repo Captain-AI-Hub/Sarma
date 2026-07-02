@@ -153,7 +153,7 @@ function coerceInputValue(arg: unknown, fallback = ""): string {
     }
     const target = record.target;
     if (target && typeof target === "object" && typeof (target as Record<string, unknown>).value === "string") {
-      return (target as Record<string, string>).value;
+      return String((target as Record<string, unknown>).value);
     }
   }
   return fallback;

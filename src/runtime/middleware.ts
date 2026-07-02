@@ -26,10 +26,11 @@ import { isCommand } from "@langchain/langgraph";
 import { createFilesystemMiddleware, LocalShellBackend } from "deepagents";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { AnyAgentMiddleware } from "langchain";
-import { buildPersistentTerminalMiddleware } from "@/resources/terminalTools";
+import { buildPersistentTerminalMiddleware, type PersistentTerminalManager } from "@/resources/terminalTools";
 
 export interface AgentMiddlewareOptions {
   conversationId?: string;
+  terminalManager?: PersistentTerminalManager | null;
 }
 
 /** Build middleware that does not require a model instance. */
@@ -61,7 +62,7 @@ function buildMiddleware(model: BaseChatModel | null, options: AgentMiddlewareOp
   const middleware: AnyAgentMiddleware[] = [
     todoListMiddleware(),
     createFilesystemMiddleware({ backend }) as unknown as AnyAgentMiddleware,
-    buildPersistentTerminalMiddleware({ conversationId: options.conversationId }),
+    buildPersistentTerminalMiddleware(options.terminalManager ?? { conversationId: options.conversationId }),
     sarmaModelRetryMiddleware({ maxRetries: 2 }),
     toolRetryMiddleware({
       maxRetries: 2,
@@ -116,7 +117,6 @@ function formatErrorMessage(error: unknown): string {
 
 // LangChain's handler may return internal response envelopes in some versions;
 // only normalize shapes we know are semantically model responses.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function normalizeModelResponse(value: unknown): any {
   if (AIMessage.isInstance(value)) return value;
   if (isCommand(value)) return value;
