@@ -15,6 +15,7 @@ import {
   type AuditStateType,
   makeSubagentNode,
   makeRouteAgent,
+  prepareAuditInput,
   routeNext,
   routeNextStructured,
 } from "@/workflows/auditGraph";
@@ -156,9 +157,11 @@ export function buildAuditSlimGraph(
   };
 
   g.addNode("verify_check", verifyCheck, { ends: ["hunter", "report"] });
+  g.addNode("prepare_input", prepareAuditInput);
 
   // Harness: recon -> hunter <-> verify -> report
-  g.addEdge(START, "recon");
+  g.addEdge(START, "prepare_input");
+  g.addEdge("prepare_input", "recon");
   g.addEdge("recon", "hunter");
   g.addEdge("hunter", "verify");
   g.addEdge("verify", "verify_check");

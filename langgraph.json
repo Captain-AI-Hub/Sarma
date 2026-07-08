@@ -1,0 +1,11 @@
+{
+  "node_version": "20",
+  "graphs": {
+    "ruflo": "./src/workflows/langgraphStudio.ts:ruflo",
+    "audit": "./src/workflows/langgraphStudio.ts:audit",
+    "audit-slim": "./src/workflows/langgraphStudio.ts:auditSlim"
+  },
+  "env": ".env",
+  "dependencies": ["."],
+  "image_distro": "wolfi"
+}

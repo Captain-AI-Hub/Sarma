@@ -377,6 +377,24 @@ export function makeSubagentNode(
   return node;
 }
 
+function latestUserMessageText(messages: unknown): string {
+  if (!Array.isArray(messages)) return "";
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i] as { _getType?: () => string; role?: string; type?: string; content?: unknown };
+    const type = typeof msg?._getType === "function" ? msg._getType() : (msg?.role ?? msg?.type);
+    if (type !== "human" && type !== "user") continue;
+    return stringifyContent(msg.content).trim();
+  }
+  return "";
+}
+
+/** Fill audit_task from Studio/chat-style input when the caller only sends messages. */
+export async function prepareAuditInput(state: AuditStateType): Promise<Partial<AuditStateType>> {
+  if ((state.audit_task ?? "").trim()) return {};
+  const auditTask = latestUserMessageText(state.messages);
+  return auditTask ? { audit_task: auditTask } : {};
+}
+
 function stringifyContent(content: unknown): string {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
@@ -593,13 +611,15 @@ export function buildAuditGraph(
   g.addNode("validate_check", validateCheck, { ends: ["gapfill", "dedupe"] });
   g.addNode("gapfill_check", gapfillCheck, { ends: ["hunt", "validate"] });
   g.addNode("feedback_check", feedbackCheck, { ends: ["hunt", "report"] });
+  g.addNode("prepare_input", prepareAuditInput);
 
   // Main line: recon → hunt → validate → (validate_check) → dedupe → trace
   //            → feedback → (feedback_check) → report
   // Side-branch (validate⇄gapfill): validate_check → gapfill → gapfill_check
   //            → {hunt | validate}
   // Outer loop: feedback_check → {hunt | report}
-  g.addEdge(START, "recon");
+  g.addEdge(START, "prepare_input");
+  g.addEdge("prepare_input", "recon");
   g.addEdge("recon", "hunt");
   g.addEdge("hunt", "validate");
   g.addEdge("validate", "validate_check");

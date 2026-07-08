@@ -1,6 +1,10 @@
 node_modules/
 dist/
 *.log
+.env
 .sarma/
 large_tool_results/
 bun.lockb
+
+# LangGraph API
+.langgraph_api
