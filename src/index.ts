@@ -12,8 +12,22 @@ import pc from "picocolors";
 
 installDebugHandlers();
 
+// Injected by `bun build --compile --define` for standalone binaries, where no
+// package.json sits next to the executable.
+declare const SARMA_VERSION: string | undefined;
+
+async function resolveVersion(): Promise<string> {
+  try {
+    const packageJson = (await Bun.file(new URL("../package.json", import.meta.url)).json()) as { version?: string };
+    if (packageJson.version) return packageJson.version;
+  } catch {
+    // Compiled binary: fall through to the build-time define.
+  }
+  return typeof SARMA_VERSION === "undefined" ? "0.0.0" : SARMA_VERSION;
+}
+
 async function main(): Promise<void> {
-  const packageJson = (await Bun.file(new URL("../package.json", import.meta.url)).json()) as { version?: string };
+  const version = await resolveVersion();
   await yargs(hideBin(process.argv))
     .scriptName("sarma")
     .usage("$0 [options]", "Sarma — AI-powered vulnerability audit agent (CLI).")
@@ -122,7 +136,7 @@ async function main(): Promise<void> {
     .strict()
     .help()
     .alias("help", "h")
-    .version(packageJson.version ?? "0.0.0")
+    .version(version)
     .parseAsync();
 }
 

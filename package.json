@@ -10,6 +10,7 @@
   },
   "files": [
     "src",
+    "scripts",
     "README.md",
     "LICENSE",
     "bunfig.toml",
@@ -29,6 +30,7 @@
   "homepage": "https://github.com/Captain-AI-Hub/Sarma#readme",
   "scripts": {
     "sarma": "bun run src/index.ts",
+    "build": "bun run scripts/build.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
