@@ -309,7 +309,7 @@ export class Session {
       for await (const event of runner.run(userMessage, userRecord.id)) {
         if (abortController.signal.aborted) throw new Error("Run cancelled.");
         this.persistToolEvent(event, toolExecutionIds);
-        if (mode === "audit" || mode === "audit-slim") {
+        if (mode === "audit" || mode === "audit-slim" || mode === "analysis") {
           this.trackGraphProgress(event);
         }
         yield event;

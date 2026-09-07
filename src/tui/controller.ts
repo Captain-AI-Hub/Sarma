@@ -35,6 +35,7 @@ import { ORCHESTRATOR } from "@/engine/streaming";
 import type { ModelProviderDTO } from "@/engine/dto";
 import { AUDIT_SUBAGENT_ORDER } from "@/workflows/auditSubagents";
 import { AUDIT_SLIM_SUBAGENT_ORDER } from "@/workflows/auditSlimSubagents";
+import { ANALYSIS_SUBAGENT_ORDER } from "@/workflows/analysisSubagents";
 import { RuntimePolicyResolver } from "@/runtime/resolver";
 import { listAvailableSkills } from "@/resources/skills";
 import { knowledgeBaseChromaPath, upsertKnowledgeBase } from "@/resources/rag";
@@ -233,6 +234,14 @@ export type RagStep = "browse" | "model-fields" | "kb-fields" | "search-fields";
 // never match a row.
 const AUDIT_STAGES = [...AUDIT_SUBAGENT_ORDER];
 const AUDIT_SLIM_STAGES = [...AUDIT_SLIM_SUBAGENT_ORDER];
+const ANALYSIS_STAGES = [...ANALYSIS_SUBAGENT_ORDER];
+
+function stagesForWorkflow(wf: string): string[] {
+  if (wf === "audit") return AUDIT_STAGES;
+  if (wf === "audit-slim") return AUDIT_SLIM_STAGES;
+  if (wf === "analysis") return ANALYSIS_STAGES;
+  return [];
+}
 
 export interface Controller {
   /** Reactive transcript items (newest last). */
@@ -545,7 +554,7 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
   }
 
   function stageTemplate(wf: string): GraphStageView[] {
-    const names = wf === "audit" ? AUDIT_STAGES : wf === "audit-slim" ? AUDIT_SLIM_STAGES : [];
+    const names = stagesForWorkflow(wf);
     return names.map((name) => ({ name, status: "pending" as const }));
   }
 
@@ -560,8 +569,7 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
 
   function isCurrentWorkflowStage(name: string): boolean {
     if (!name) return false;
-    const wf = workflow();
-    return (wf === "audit" && AUDIT_STAGES.includes(name)) || (wf === "audit-slim" && AUDIT_SLIM_STAGES.includes(name));
+    return stagesForWorkflow(workflow()).includes(name);
   }
 
   function isCurrentWorkflowNode(name: string): boolean {
@@ -569,7 +577,12 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
     const wf = workflow();
     const auditRouters = ["validate_check", "gapfill_check", "feedback_check"];
     const auditSlimRouters = ["verify_check"];
-    return (wf === "audit" && auditRouters.includes(name)) || (wf === "audit-slim" && auditSlimRouters.includes(name));
+    const analysisRouters = ["surface_check", "review_check"];
+    return (
+      (wf === "audit" && auditRouters.includes(name)) ||
+      (wf === "audit-slim" && auditSlimRouters.includes(name)) ||
+      (wf === "analysis" && analysisRouters.includes(name))
+    );
   }
 
   function findTool(id: string): number {
@@ -1231,6 +1244,26 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
             detail: "same-model structured router: hunter | report",
           });
         }
+        if (wf === "analysis" && stage.name === "surface") {
+          nodes.push({
+            name: "surface_check",
+            label: "surface_check",
+            kind: "router",
+            level: 3,
+            status: nodeStatus("surface_check"),
+            detail: "same-model structured router: mapfill | threatmap",
+          });
+        }
+        if (wf === "analysis" && stage.name === "review") {
+          nodes.push({
+            name: "review_check",
+            label: "review_check",
+            kind: "router",
+            level: 3,
+            status: nodeStatus("review_check"),
+            detail: "same-model structured router: surface | report",
+          });
+        }
       }
       nodes.push({
         name: "END",
@@ -1299,14 +1332,14 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
   }
 
   function configWorkflowNames(): string[] {
-    const preferred = workflowNames.length > 0 ? workflowNames : ["ruflo", "audit", "audit-slim"];
+    const preferred = workflowNames.length > 0 ? workflowNames : ["ruflo", "audit", "audit-slim", "analysis"];
     return [...new Set(preferred)];
   }
 
   function agentNamesForWorkflow(wf: string): string[] {
-    if (wf === "audit") return [wf, ...AUDIT_STAGES.map((name) => `${wf}.${name}`)];
-    if (wf === "audit-slim") return [wf, ...AUDIT_SLIM_STAGES.map((name) => `${wf}.${name}`)];
-    return [wf];
+    const stages = stagesForWorkflow(wf);
+    if (stages.length === 0) return [wf];
+    return [wf, ...stages.map((name) => `${wf}.${name}`)];
   }
 
   function ensureWorkflowAgents(): void {

@@ -17,6 +17,8 @@ import { buildAuditGraph } from "@/workflows/auditGraph";
 import { AUDIT_SUBAGENTS } from "@/workflows/auditSubagents";
 import { buildAuditSlimGraph } from "@/workflows/auditSlimGraph";
 import { AUDIT_SLIM_SUBAGENTS } from "@/workflows/auditSlimSubagents";
+import { buildAnalysisGraph } from "@/workflows/analysisGraph";
+import { ANALYSIS_SUBAGENTS } from "@/workflows/analysisSubagents";
 import { buildDelegateTool } from "@/workflows/ruflo";
 import { createTokenEstimator } from "@/context/tokenizer";
 
@@ -98,7 +100,11 @@ export class AgentFactory {
     model: BaseChatModel,
     tools: StructuredToolInterface[],
   ): CompiledAgent {
-    if (config.mode === "audit" || config.mode === "audit-slim") {
+    if (
+      config.mode === "audit" ||
+      config.mode === "audit-slim" ||
+      config.mode === "analysis"
+    ) {
       const subagentModels = this.loadSubagentModels(config.subagentProviders);
       delete subagentModels.orchestrator;
       const compileKwargs = this.runtimeServices?.compileKwargs() ?? {};
@@ -107,25 +113,8 @@ export class AgentFactory {
         Math.min(120_000, Math.trunc((config.provider.maxContextTokens || 128_000) * 0.35)),
       );
       const estimateText = createTokenEstimator(config.provider);
-
-      if (config.mode === "audit-slim") {
-        return buildAuditSlimGraph(model, tools, {
-          systemPrompt: config.systemPrompt || "",
-          subagentSpecs: AUDIT_SLIM_SUBAGENTS,
-          subagentModels: Object.keys(subagentModels).length ? subagentModels : null,
-          subagentMcpAllow: config.subagentMcpAllow,
-          subagentSkills: config.subagentSkills,
-          maxPriorStageTokens,
-          estimateText,
-          compileKwargs,
-          conversationId: config.conversationId,
-          terminalManager: this.runtimeServices?.terminalManager,
-        }) as unknown as CompiledAgent;
-      }
-
-      return buildAuditGraph(model, tools, {
+      const commonOptions = {
         systemPrompt: config.systemPrompt || "",
-        subagentSpecs: AUDIT_SUBAGENTS,
         subagentModels: Object.keys(subagentModels).length ? subagentModels : null,
         subagentMcpAllow: config.subagentMcpAllow,
         subagentSkills: config.subagentSkills,
@@ -134,6 +123,25 @@ export class AgentFactory {
         compileKwargs,
         conversationId: config.conversationId,
         terminalManager: this.runtimeServices?.terminalManager,
+      };
+
+      if (config.mode === "analysis") {
+        return buildAnalysisGraph(model, tools, {
+          ...commonOptions,
+          subagentSpecs: ANALYSIS_SUBAGENTS,
+        }) as unknown as CompiledAgent;
+      }
+
+      if (config.mode === "audit-slim") {
+        return buildAuditSlimGraph(model, tools, {
+          ...commonOptions,
+          subagentSpecs: AUDIT_SLIM_SUBAGENTS,
+        }) as unknown as CompiledAgent;
+      }
+
+      return buildAuditGraph(model, tools, {
+        ...commonOptions,
+        subagentSpecs: AUDIT_SUBAGENTS,
       }) as unknown as CompiledAgent;
     }
 

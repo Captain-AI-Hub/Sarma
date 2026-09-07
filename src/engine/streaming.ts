@@ -23,6 +23,7 @@ import { StreamEvent } from "@/engine/models";
 import { StreamEventType } from "@/engine/enums";
 import { AUDIT_SUBAGENT_ORDER } from "@/workflows/auditSubagents";
 import { AUDIT_SLIM_SUBAGENT_ORDER } from "@/workflows/auditSlimSubagents";
+import { ANALYSIS_SUBAGENT_ORDER } from "@/workflows/analysisSubagents";
 
 /** Maximum characters retained from a tool result in streaming events. */
 export const MAX_TOOL_RESULT_CHARS = 2000;
@@ -35,12 +36,15 @@ const ROUTER_NODES = [
   "gapfill_check",
   "feedback_check",
   "verify_check",
+  "surface_check",
+  "review_check",
 ] as const;
 
-/** Known fixed workflow node names (from audit pipelines). */
+/** Known fixed workflow node names (from audit/analysis pipelines). */
 const KNOWN_WORKFLOW_NODES: Set<string> = new Set([
   ...AUDIT_SUBAGENT_ORDER,
   ...AUDIT_SLIM_SUBAGENT_ORDER,
+  ...ANALYSIS_SUBAGENT_ORDER,
   ...ROUTER_NODES,
 ]);
 

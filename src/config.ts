@@ -19,7 +19,7 @@ import * as paths from "@/paths";
 
 export const WILDCARD = "*";
 export const API_MODES = ["openai_compatible", "openai_responses", "anthropic"] as const;
-export const WORKFLOWS = ["ruflo", "audit", "audit-slim"] as const;
+export const WORKFLOWS = ["ruflo", "audit", "audit-slim", "analysis"] as const;
 export const LEGACY_WORKFLOW_ALIASES: Record<string, string> = { chat: "ruflo" };
 const CONTEXT_WINDOW_UNIT_EXPONENTS: Record<string, number> = {
   k: 1,
@@ -177,6 +177,14 @@ const AUDIT_AGENT_NAMES = [
   "audit-slim.hunter",
   "audit-slim.verify",
   "audit-slim.report",
+  "analysis",
+  "analysis.survey",
+  "analysis.architecture",
+  "analysis.surface",
+  "analysis.mapfill",
+  "analysis.threatmap",
+  "analysis.review",
+  "analysis.report",
 ];
 
 const DEFAULT_MODELS_TOML = `# Sarma model providers

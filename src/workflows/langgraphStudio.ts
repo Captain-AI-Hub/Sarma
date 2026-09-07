@@ -17,12 +17,14 @@ import { buildAuditGraph } from "@/workflows/auditGraph";
 import { AUDIT_SUBAGENTS } from "@/workflows/auditSubagents";
 import { buildAuditSlimGraph } from "@/workflows/auditSlimGraph";
 import { AUDIT_SLIM_SUBAGENTS } from "@/workflows/auditSlimSubagents";
+import { buildAnalysisGraph } from "@/workflows/analysisGraph";
+import { ANALYSIS_SUBAGENTS } from "@/workflows/analysisSubagents";
 import { buildDelegateTool } from "@/workflows/ruflo";
 
 const STUDIO_CONVERSATION_ID = "langgraph-studio";
 const ENABLE_MCP = process.env.SARMA_LANGGRAPH_ENABLE_MCP === "true";
 
-type WorkflowName = "ruflo" | "audit" | "audit-slim";
+type WorkflowName = "ruflo" | "audit" | "audit-slim" | "analysis";
 type CompiledGraph = Record<string, unknown>;
 
 const config = loadConfig();
@@ -112,10 +114,15 @@ async function buildWorkflowGraph(mode: WorkflowName): Promise<CompiledGraph> {
           ...commonOptions,
           subagentSpecs: AUDIT_SLIM_SUBAGENTS,
         })
-      : buildAuditGraph(model, tools, {
-          ...commonOptions,
-          subagentSpecs: AUDIT_SUBAGENTS,
-        });
+      : mode === "analysis"
+        ? buildAnalysisGraph(model, tools, {
+            ...commonOptions,
+            subagentSpecs: ANALYSIS_SUBAGENTS,
+          })
+        : buildAuditGraph(model, tools, {
+            ...commonOptions,
+            subagentSpecs: AUDIT_SUBAGENTS,
+          });
   (graph as unknown as CompiledGraph).name = mode;
   return graph as unknown as CompiledGraph;
 }
@@ -123,3 +130,4 @@ async function buildWorkflowGraph(mode: WorkflowName): Promise<CompiledGraph> {
 export const ruflo = await buildWorkflowGraph("ruflo");
 export const audit = await buildWorkflowGraph("audit");
 export const auditSlim = await buildWorkflowGraph("audit-slim");
+export const analysis = await buildWorkflowGraph("analysis");

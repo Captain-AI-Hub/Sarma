@@ -8,6 +8,7 @@
 
 import { AUDIT_SUBAGENT_ORDER } from "@/workflows/auditSubagents";
 import { AUDIT_SLIM_SUBAGENT_ORDER } from "@/workflows/auditSlimSubagents";
+import { ANALYSIS_SUBAGENT_ORDER } from "@/workflows/analysisSubagents";
 
 export interface WorkflowMeta {
   name: string;
@@ -34,6 +35,12 @@ const WORKFLOW_METAS: Record<string, WorkflowMeta> = {
     description: "Compact 4-stage audit pipeline",
     isDefault: false,
     subagents: AUDIT_SLIM_SUBAGENT_ORDER,
+  },
+  analysis: {
+    name: "analysis",
+    description: "Architecture audit and attack-surface analysis (7 stages, no vulnerability exploitation)",
+    isDefault: false,
+    subagents: ANALYSIS_SUBAGENT_ORDER,
   },
 };
 

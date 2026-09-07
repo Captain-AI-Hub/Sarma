@@ -253,7 +253,7 @@ export class AgentRunner {
     mode: string,
   ): Record<string, unknown> {
     const graphInput: Record<string, unknown> = { messages };
-    if (mode === "audit" || mode === "audit-slim") {
+    if (mode === "audit" || mode === "audit-slim" || mode === "analysis") {
       graphInput.audit_task = userMessage;
       graphInput.stage_outputs = {};
       graphInput.gapfill_count = 0;

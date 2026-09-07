@@ -66,7 +66,7 @@ export class RuntimePolicyResolver {
     const subagents = subagentsForWorkflow(workflow);
     const configuredSkill = this.loadSkillDict(this.skillNamesFor(workflow));
     const skillDict =
-      workflow === "audit" || workflow === "audit-slim"
+      workflow === "audit" || workflow === "audit-slim" || workflow === "analysis"
         ? mergeSkillDicts(AUDIT_SKILL_DICT, configuredSkill)
         : configuredSkill;
     const skill = resolveSkill((skillDict ?? undefined) as Record<string, unknown> | undefined);
