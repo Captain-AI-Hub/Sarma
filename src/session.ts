@@ -31,7 +31,7 @@ import { createTokenEstimator } from "@/context/tokenizer";
 import { type CliConfig, type ProviderConfig } from "@/config";
 import { RuntimePolicyResolver } from "@/runtime/resolver";
 import { AgentRuntimeServices } from "@/runtime/services";
-import { runtimeStaticToolCount } from "@/runtime/toolPolicy";
+import { runtimeStaticToolCount, isBuiltinToolName } from "@/runtime/toolPolicy";
 import { Store } from "@/store";
 import { defaultWorkflowName, getWorkflowMeta } from "@/workflows";
 
@@ -61,6 +61,19 @@ export class Session {
   private readonly compactTargetRatio = 0.55;
   private currentWorkflow: string = defaultWorkflowName();
   private currentRunAbort: AbortController | null = null;
+  /**
+   * Bumped whenever conversation history is rewritten (compaction). The
+   * checkpoint thread id incorporates the epoch so the LangGraph checkpointer
+   * abandons pre-rewrite state instead of merging it with the new history.
+   */
+  private checkpointEpoch = 0;
+  /**
+   * Checkpoint threads this runtime has already seeded with full history.
+   * Threads not in this set receive the full persisted history on their first
+   * turn; seeded threads receive only the new user message (the checkpointer
+   * supplies the rest). Cleared on runtime restart (fresh MemorySaver).
+   */
+  private seededCheckpointThreads = new Set<string>();
 
   constructor(
     private readonly config: CliConfig,
@@ -137,6 +150,7 @@ export class Session {
       runtimeServices: this.runtimeServices,
     });
     this.resolver = new RuntimePolicyResolver(this.config);
+    this.seededCheckpointThreads.clear();
     this.resetGraphState();
   }
 
@@ -197,6 +211,11 @@ export class Session {
     );
     if (!changed) return false;
 
+    // History was rewritten; the next turn must run on a fresh checkpoint
+    // thread so the pre-compaction messages are not resurrected from the
+    // checkpointer and merged back in.
+    this.checkpointEpoch += 1;
+
     const sourceCount = this._history.length - (newHistory.length - 1);
     this._history = newHistory;
     if (this._conversationId) {
@@ -236,7 +255,10 @@ export class Session {
 
     try {
       if (abortController.signal.aborted) throw new Error("Run cancelled.");
-      await this.pool.connect(Session.serverConfigsFor(runPlan.enabledServers));
+      await Session.raceAbort(
+        this.pool.connect(Session.serverConfigsFor(runPlan.enabledServers)),
+        abortController.signal,
+      );
       if (abortController.signal.aborted) throw new Error("Run cancelled.");
 
       await this.compactContext({
@@ -245,19 +267,25 @@ export class Session {
         upcomingText: userMessage,
         systemPrompt: runPlan.systemPrompt,
       });
+      if (abortController.signal.aborted) throw new Error("Run cancelled.");
 
-      const runnerHistory = [...this._history];
+      // Only seed the checkpoint thread with full history the first time this
+      // runtime sees it; afterwards the checkpointer holds the history and we
+      // send just the new user message. (Re-seeding is idempotent because
+      // persisted messages carry stable ids.)
+      const threadId = `${this._conversationId}#${this.checkpointEpoch}`;
+      const seedHistory = !this.seededCheckpointThreads.has(threadId);
+      const runnerHistory = seedHistory ? [...this._history] : [];
 
       // Persist user message.
       this.store.saveMessage(this._conversationId, turnId, "user", userMessage);
-      this._history.push(
-        new ConversationMessage({
-          role: "user",
-          content: userMessage,
-          conversationId: this._conversationId,
-          turnId,
-        }),
-      );
+      const userRecord = new ConversationMessage({
+        role: "user",
+        content: userMessage,
+        conversationId: this._conversationId,
+        turnId,
+      });
+      this._history.push(userRecord);
 
       const runner = new AgentRunner({
         factory: this.factory,
@@ -269,6 +297,7 @@ export class Session {
         systemPrompt: runPlan.systemPrompt,
         conversationId: this._conversationId,
         turnId,
+        threadId,
         mode,
         subagentProviders: runPlan.subagentProviders,
         subagentMcpAllow: runPlan.subagentMcpAllow,
@@ -277,7 +306,7 @@ export class Session {
         abortSignal: abortController.signal,
       });
 
-      for await (const event of runner.run(userMessage)) {
+      for await (const event of runner.run(userMessage, userRecord.id)) {
         if (abortController.signal.aborted) throw new Error("Run cancelled.");
         this.persistToolEvent(event, toolExecutionIds);
         if (mode === "audit" || mode === "audit-slim") {
@@ -285,6 +314,7 @@ export class Session {
         }
         yield event;
       }
+      this.seededCheckpointThreads.add(threadId);
 
       // Persist assistant response. For audit modes finalContent is the report
       // stage; for Ruflo it is the accumulated assistant tokens.
@@ -360,10 +390,13 @@ export class Session {
       .filter((m) => m.content)
       .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
       .join("\n\n");
-    const result = await model.invoke([
-      new SystemMessage({ content: STRUCTURED_MEMORY_PROMPT }),
-      new HumanMessage({ content: transcript }),
-    ]);
+    const result = await model.invoke(
+      [
+        new SystemMessage({ content: STRUCTURED_MEMORY_PROMPT }),
+        new HumanMessage({ content: transcript }),
+      ],
+      { signal: this.currentRunAbort?.signal },
+    );
     const content = (result as { content?: unknown }).content;
     return typeof content === "string" ? content : String(content ?? "");
   }
@@ -405,7 +438,11 @@ export class Session {
       const toolName = String(payload.tool_name ?? "");
       const callId = String(payload.tool_call_id ?? "");
       const argsJson = String(payload.args_json ?? JSON.stringify(payload.args ?? {}));
-      const serverName = toolName.includes("__") ? toolName.split("__", 1)[0]! : "";
+      // MCP tools carry a server prefix; built-in tools have no server. Accept
+      // the same separator set as mcpPool.toolBelongsToServer.
+      const serverName = isBuiltinToolName(toolName)
+        ? ""
+        : (toolName.match(/^(.+?)(?:__|_|\.|:)/)?.[1] ?? "");
       const id = this.store.saveToolExecution(this._conversationId, event.turnId, toolName, argsJson, serverName);
       if (callId) toolExecutionIds.set(callId, id);
       return;
@@ -423,6 +460,16 @@ export class Session {
       );
       toolExecutionIds.delete(callId);
     }
+  }
+
+  /** Race a promise against an abort signal (for calls that ignore signals). */
+  private static raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+    if (signal.aborted) return Promise.reject(new Error("Run cancelled."));
+    return new Promise<T>((resolve, reject) => {
+      const onAbort = () => reject(new Error("Run cancelled."));
+      signal.addEventListener("abort", onAbort, { once: true });
+      promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+    });
   }
 
   private static serverConfigsFor(servers: { name: string; toLangchainConfig(): Record<string, unknown> }[]): Record<string, Record<string, unknown>> {

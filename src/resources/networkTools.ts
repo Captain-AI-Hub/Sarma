@@ -113,6 +113,11 @@ export function buildHttpExchangeTool(): StructuredToolInterface {
   return httpExchange as unknown as StructuredToolInterface;
 }
 
+/** Clamp an LLM-supplied timeout (seconds) into a sane operational range. */
+function clampTimeoutSeconds(timeout: number): number {
+  return Math.min(Math.max(0.1, timeout), 120);
+}
+
 function payloadBytes(payload: string, payloadHex: string): Buffer {
   if (payloadHex.trim()) {
     const hex = payloadHex.split(/\s+/).join("");
@@ -149,7 +154,7 @@ export async function exchangePacket(args: PacketArgs): Promise<string> {
     return `packet_exchange invalid payload_hex: ${exc instanceof Error ? exc.message : exc}`;
   }
   const maxRecv = Math.max(1, Math.min(Math.trunc(args.recvBytes || 4096), 1024 * 1024));
-  const timeoutMs = Math.max(0.1, args.timeout || 5.0) * 1000;
+  const timeoutMs = clampTimeoutSeconds(args.timeout || 5.0) * 1000;
 
   try {
     let response: Buffer;
@@ -292,7 +297,7 @@ export async function exchangeHttp(args: HttpArgs): Promise<string> {
 
   const method = (args.method.trim().toUpperCase() || "GET");
   const maxBody = Math.max(1, Math.min(Math.trunc(args.maxResponseBytes || 16384), 1024 * 1024));
-  const timeoutMs = Math.max(0.1, args.timeout || 10.0) * 1000;
+  const timeoutMs = clampTimeoutSeconds(args.timeout || 10.0) * 1000;
 
   const nodeHttp = target.scheme === "https" ? await import("node:https") : await import("node:http");
   return new Promise<string>((resolve) => {
@@ -330,18 +335,17 @@ export async function exchangeHttp(args: HttpArgs): Promise<string> {
               formatHttpResponse(target, method, data.length, res.statusCode ?? 0, res.statusMessage ?? "", headerPairs, responseBody),
             );
           });
-          // After res.destroy() the socket closes without "end"; surface what
-          // we captured rather than hanging the promise.
+          // Surface whatever was captured when the socket closes without an
+          // "end" — a clean close mid-body (truncated response) emits "close"
+          // but neither "end" nor "error", and must not hang the promise.
           res.on("close", () => {
-            if (total >= maxBody) {
-              const responseBody = Buffer.concat(chunks).subarray(0, maxBody);
-              const headerPairs = Object.entries(res.headers).map(
-                ([k, v]) => [k, Array.isArray(v) ? v.join(", ") : String(v ?? "")] as [string, string],
-              );
-              resolve(
-                formatHttpResponse(target, method, data.length, res.statusCode ?? 0, res.statusMessage ?? "", headerPairs, responseBody),
-              );
-            }
+            const responseBody = Buffer.concat(chunks).subarray(0, maxBody);
+            const headerPairs = Object.entries(res.headers).map(
+              ([k, v]) => [k, Array.isArray(v) ? v.join(", ") : String(v ?? "")] as [string, string],
+            );
+            resolve(
+              formatHttpResponse(target, method, data.length, res.statusCode ?? 0, res.statusMessage ?? "", headerPairs, responseBody),
+            );
           });
         },
       );

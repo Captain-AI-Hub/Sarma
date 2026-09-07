@@ -217,7 +217,7 @@ export class Store {
 
   loadMessages(conversationId: string): MessageRow[] {
     return this.conn
-      .query("SELECT * FROM messages WHERE conversation_id=? ORDER BY created_at")
+      .query("SELECT * FROM messages WHERE conversation_id=? ORDER BY created_at, rowid")
       .all(conversationId) as MessageRow[];
   }
 

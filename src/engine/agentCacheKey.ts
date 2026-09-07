@@ -57,6 +57,7 @@ export function agentCacheKey(
   config: AgentRunConfig,
   serverConfigs: Record<string, Record<string, unknown>>,
   tools: StructuredToolInterface[],
+  poolGeneration = 0,
 ): string {
   const sortedEntries = <T>(obj: Record<string, T>): [string, T][] =>
     Object.entries(obj).sort(([a], [b]) => a.localeCompare(b));
@@ -64,6 +65,11 @@ export function agentCacheKey(
   const data = {
     mode: config.mode,
     conversation_id: config.conversationId,
+    // Tool objects are bound to the current pool clients; a pool reconnect
+    // produces new clients under identical tool names, so the cache key must
+    // incorporate the pool generation to avoid reusing tools bound to closed
+    // connections.
+    pool_generation: poolGeneration,
     provider: providerKey(config.provider),
     skill: skillKey(config.skill),
     servers: serverConfigs,

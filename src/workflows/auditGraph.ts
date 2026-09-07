@@ -36,6 +36,8 @@ import type { PersistentTerminalManager } from "@/resources/terminalTools";
 export const DEFAULT_MAX_GAPFILL = 3;
 export const DEFAULT_MAX_FEEDBACK = 2;
 export const DEFAULT_ROUTE_TIMEOUT = 30_000; // ms
+/** Per-subagent react-loop step cap (the outer run's budget is much larger). */
+export const SUBAGENT_RECURSION_LIMIT = 100;
 
 export const ROUTE_ROUTER_PROMPT =
   "You are Sarma's audit workflow router. Read the completed stage output " +
@@ -55,7 +57,10 @@ export const AuditState = Annotation.Root({
   ...MessagesAnnotation.spec,
   audit_task: Annotation<string>({ reducer: (_a, b) => b, default: () => "" }),
   stage_outputs: Annotation<Record<string, string>>({
-    reducer: (a, b) => ({ ...a, ...b }),
+    // An empty object means "reset" (turn start); otherwise merge per-stage
+    // updates. Without this, the previous turn's stage outputs leak into the
+    // next turn through the checkpoint.
+    reducer: (a, b) => (b && typeof b === "object" && Object.keys(b).length === 0 ? {} : { ...a, ...b }),
     default: () => ({}),
   }),
   gapfill_count: Annotation<number>({ reducer: (_a, b) => b, default: () => 0 }),
@@ -344,15 +349,22 @@ export function makeSubagentNode(
 
     // Invoke the inner agent WITH this node's config so the run is nested under
     // the "<name>:<uuid>" namespace and its tokens/tool-calls surface on the
-    // outer stream({subgraphs:true}). See the function docstring.
+    // outer stream({subgraphs:true}). See the function docstring. The outer
+    // recursionLimit (the whole-run step budget) is replaced with a bounded
+    // per-subagent limit so one tool-looping subagent cannot spin forever.
     let lastMsg = "";
     try {
-      const result = (await agent.invoke({ messages: inputMessages }, config)) as {
+      const result = (await agent.invoke(
+        { messages: inputMessages },
+        { ...config, recursionLimit: SUBAGENT_RECURSION_LIMIT },
+      )) as {
         messages?: BaseMessage[];
       };
       const msgs = result.messages ?? [];
       lastMsg = msgs.length ? stringifyContent(msgs[msgs.length - 1]!.content) : "";
     } catch (exc) {
+      // Aborts must unwind the whole run, not degrade into a stage output.
+      if ((exc instanceof Error && exc.name === "AbortError") || config?.signal?.aborted) throw exc;
       // Surface a completion so the UI does not hang on a perpetually-"running"
       // stage, and record the failure as this stage's output so downstream
       // stages and the final report can see what went wrong.

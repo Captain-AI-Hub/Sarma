@@ -49,7 +49,8 @@ function isFile(path: string): boolean {
 }
 
 function validSkillName(name: string): boolean {
-  return /^[A-Za-z0-9_.-]+$/.test(name);
+  // "." / ".." pass the character whitelist but escape the install directory.
+  return /^[A-Za-z0-9_.-]+$/.test(name) && !/^\.+$/.test(name);
 }
 
 function candidates(baseUrl: string, paths: string[]): string[] {

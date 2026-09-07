@@ -41,6 +41,12 @@ export interface AgentRunnerOptions {
   systemPrompt: string;
   conversationId: string;
   turnId: string;
+  /**
+   * Checkpoint thread id override. Defaults to `conversationId`. Session bumps
+   * this when history is rewritten (compaction) so stale checkpointed state is
+   * abandoned instead of merged with the rewritten history.
+   */
+  threadId?: string;
   mode?: string;
   subagentProviders?: Record<string, ModelProviderDTO>;
   subagentMcpAllow?: Record<string, string[] | null>;
@@ -90,6 +96,7 @@ export class AgentRunner {
       systemPrompt: options.systemPrompt,
       conversationId: options.conversationId,
       turnId: options.turnId,
+      threadId: options.threadId ?? options.conversationId,
       mode: options.mode ?? "audit",
       subagentProviders: options.subagentProviders ?? {},
       subagentMcpAllow: options.subagentMcpAllow ?? {},
@@ -99,7 +106,7 @@ export class AgentRunner {
     };
   }
 
-  async *run(message: string): AsyncIterableIterator<StreamEvent> {
+  async *run(message: string, userMessageId?: string): AsyncIterableIterator<StreamEvent> {
     const o = this.opts;
     this.runConfig = makeAgentRunConfig({
       conversationId: o.conversationId,
@@ -117,7 +124,7 @@ export class AgentRunner {
     });
 
     const [agent] = await o.factory.build(this.runConfig);
-    const inputMessages = AgentRunner.buildInputMessages(o.history, message);
+    const inputMessages = AgentRunner.buildInputMessages(o.history, message, userMessageId);
     const graphInput = AgentRunner.buildGraphInput(inputMessages, message, o.mode);
 
     const translator = new EventTranslator(o.conversationId, o.turnId);
@@ -134,7 +141,7 @@ export class AgentRunner {
         streamMode: ["messages", "updates", "custom"],
         subgraphs: true,
         recursionLimit: this.runConfig.maxSteps,
-        configurable: { thread_id: o.conversationId },
+        configurable: { thread_id: o.threadId },
         signal: o.abortSignal ?? undefined,
       });
       if (!stream || typeof stream[Symbol.asyncIterator] !== "function") {
@@ -229,9 +236,14 @@ export class AgentRunner {
   private static buildInputMessages(
     history: ConversationMessage[],
     userMessage: string,
+    userMessageId?: string,
   ): BaseMessage[] {
     const messages: BaseMessage[] = history.map((m) => m.toLangchainMessage());
-    messages.push(new HumanMessage({ content: userMessage }));
+    messages.push(
+      userMessageId
+        ? new HumanMessage({ content: userMessage, id: userMessageId })
+        : new HumanMessage({ content: userMessage }),
+    );
     return messages;
   }
 

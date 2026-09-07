@@ -10,6 +10,11 @@ interface SearchResult {
   snippet: string;
 }
 
+/** Clamp an LLM-supplied timeout (seconds) into a sane operational range. */
+function clampTimeoutSeconds(timeout: number): number {
+  return Math.min(Math.max(1.0, timeout), 120);
+}
+
 /** Build the built-in LangChain web search tool. */
 export function buildWebSearchTool(): StructuredToolInterface {
   const webSearch = tool(
@@ -119,7 +124,7 @@ export async function searchWeb(query: string, maxResults = 5, timeout = 10.0): 
   const url = "https://duckduckgo.com/html/?" + new URLSearchParams({ q }).toString();
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Math.max(1.0, timeout) * 1000);
+  const timer = setTimeout(() => controller.abort(), clampTimeoutSeconds(timeout) * 1000);
   let body: string;
   try {
     const response = await fetch(url, {
@@ -166,7 +171,7 @@ export async function fetchUrlContent(options: FetchUrlOptions): Promise<string>
 
   const maxChars = Math.max(500, Math.min(Math.trunc(options.maxChars || 12000), MAX_FETCH_CHARS));
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Math.max(1.0, options.timeout ?? 10.0) * 1000);
+  const timer = setTimeout(() => controller.abort(), clampTimeoutSeconds(options.timeout ?? 10.0) * 1000);
   let response: Response;
   let body: string;
   try {

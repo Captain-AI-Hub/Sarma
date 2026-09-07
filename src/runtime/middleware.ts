@@ -89,13 +89,26 @@ export function sarmaModelRetryMiddleware(options: { maxRetries?: number } = {})
         try {
           return normalizeModelResponse(await handler(request));
         } catch (exc) {
+          // Never retry cancellations — the user is waiting on the abort.
+          if (isAbortError(exc)) throw exc;
           lastError = exc;
           if (attempt === maxRetries) break;
+          await delay(250 * 2 ** attempt);
         }
       }
       throw new Error(`Model call failed after ${maxRetries + 1} attempts: ${formatErrorMessage(lastError)}`);
     },
   }) as unknown as AnyAgentMiddleware;
+}
+
+function isAbortError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (error.name === "AbortError" || error.name === "TimeoutError") return true;
+  return /abort/i.test(error.message);
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function formatErrorMessage(error: unknown): string {

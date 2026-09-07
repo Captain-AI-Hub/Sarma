@@ -86,9 +86,21 @@ export class McpClientPool {
   private toolList: StructuredToolInterface[] = [];
   private connected = false;
   private statuses = new Map<string, McpServerStatus>();
+  /** Serializes connect/disconnect so concurrent callers cannot leak clients. */
+  private queue: Promise<unknown> = Promise.resolve();
+  /**
+   * Bumped every time the pool actually rebuilds its clients. Compiled agents
+   * embed tool objects bound to the current clients, so agent caches must key
+   * on this generation to avoid holding tools bound to closed connections.
+   */
+  private generationCounter = 0;
 
   get isConnected(): boolean {
     return this.connected;
+  }
+
+  get generation(): number {
+    return this.generationCounter;
   }
 
   get tools(): StructuredToolInterface[] {
@@ -106,12 +118,32 @@ export class McpClientPool {
    *        by {@link McpServerDTO.toLangchainConfig}.
    */
   async connect(serverConfigs: ServerConfigs): Promise<StructuredToolInterface[]> {
+    const run = this.queue.then(() => this.connectExclusive(serverConfigs));
+    this.queue = run.catch(() => {});
+    return run;
+  }
+
+  /** Reconnect using the last known server configs. */
+  async reconnect(): Promise<StructuredToolInterface[]> {
+    if (Object.keys(this.serverConfigs).length === 0) return [];
+    return this.connect(this.serverConfigs);
+  }
+
+  /** Cleanly close all MCP connections. */
+  async disconnect(): Promise<void> {
+    const run = this.queue.then(() => this.disconnectExclusive());
+    this.queue = run.catch(() => {});
+    return run;
+  }
+
+  private async connectExclusive(serverConfigs: ServerConfigs): Promise<StructuredToolInterface[]> {
     const fingerprint = configFingerprint(serverConfigs);
     if (this.connected && fingerprint && fingerprint === this.fingerprint && !this.hasFailedServers()) {
       return this.toolList;
     }
 
-    await this.disconnect();
+    await this.disconnectExclusive();
+    this.generationCounter += 1;
 
     this.serverConfigs = { ...serverConfigs };
     this.fingerprint = fingerprint;
@@ -142,20 +174,13 @@ export class McpClientPool {
     this.connected = successCount > 0;
     if (this.connected) return this.toolList;
 
-    await this.disconnect();
+    await this.disconnectExclusive();
     this.serverConfigs = { ...serverConfigs };
     this.statuses = statuses;
     throw new McpConnectionError(Object.keys(serverConfigs).join(", "), errors.join("; "));
   }
 
-  /** Reconnect using the last known server configs. */
-  async reconnect(): Promise<StructuredToolInterface[]> {
-    if (Object.keys(this.serverConfigs).length === 0) return [];
-    return this.connect(this.serverConfigs);
-  }
-
-  /** Cleanly close all MCP connections. */
-  async disconnect(): Promise<void> {
+  private async disconnectExclusive(): Promise<void> {
     for (const client of this.clients) {
       try {
         await client.close();
@@ -188,13 +213,13 @@ interface ServerConnectResult {
 }
 
 async function connectOneServer(name: string, config: Record<string, unknown>): Promise<ServerConnectResult> {
+  const client = new MultiServerMCPClient({
+    mcpServers: { [name]: config } as never,
+    prefixToolNameWithServerName: true,
+    additionalToolNamePrefix: "",
+    throwOnLoadError: true,
+  });
   try {
-    const client = new MultiServerMCPClient({
-      mcpServers: { [name]: config } as never,
-      prefixToolNameWithServerName: true,
-      additionalToolNamePrefix: "",
-      throwOnLoadError: true,
-    });
     const tools = (await withTimeout(
       client.getTools(),
       connectTimeout({ [name]: config }),
@@ -211,6 +236,13 @@ async function connectOneServer(name: string, config: Record<string, unknown>): 
       error: null,
     };
   } catch (exc) {
+    // A timed-out / failed connect must not leak the underlying stdio child
+    // process or HTTP session.
+    try {
+      await client.close();
+    } catch {
+      /* best-effort close */
+    }
     const message = exc instanceof Error ? exc.message : String(exc);
     return {
       client: null,

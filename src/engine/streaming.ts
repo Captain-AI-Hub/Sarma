@@ -52,6 +52,27 @@ function nowSeconds(): number {
   return Date.now() / 1000;
 }
 
+/**
+ * ToolMessage content can be a string or an array of content blocks (common
+ * with MCP tools); flatten blocks instead of producing "[object Object]".
+ */
+function stringifyToolContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    const parts: string[] = [];
+    for (const block of content) {
+      if (typeof block === "string") parts.push(block);
+      else if (block && typeof block === "object") {
+        const obj = block as Record<string, unknown>;
+        if (obj.type === "text") parts.push(String(obj.text ?? ""));
+        else if ("content" in obj) parts.push(String(obj.content));
+      }
+    }
+    return parts.filter((p) => p).join("\n");
+  }
+  return String(content ?? "");
+}
+
 function stageNameFromNsSegment(segment: unknown): string {
   if (typeof segment !== "string") return "";
   // LangGraph namespace segments are often "node_name:<task_uuid>".
@@ -406,7 +427,7 @@ export class EventTranslator {
       if (msg.name === undefined || msg.tool_call_id === undefined) continue;
       const toolName = msg.name ?? "";
       const toolCallId = msg.tool_call_id ?? "";
-      const content = typeof msg.content === "string" ? msg.content : String(msg.content);
+      const content = stringifyToolContent(msg.content);
       const isError = msg.status === "error";
 
       events.push(

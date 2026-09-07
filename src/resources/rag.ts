@@ -9,7 +9,7 @@
  * configured, search falls back to lexical scoring.
  */
 
-import { existsSync, mkdirSync, rmSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, extname, join, resolve, basename } from "node:path";
 import { Database } from "bun:sqlite";
@@ -121,7 +121,6 @@ export async function chunkKnowledgeBase(
   const files = iterTextFiles(root);
   const outputPath = knowledgeBaseChromaPath(kb);
   mkdirSync(dirname(outputPath), { recursive: true });
-  if (existsSync(outputPath)) rmSync(outputPath, { recursive: true, force: true });
 
   const documents: ChunkDocument[] = [];
   for (const filePath of files) {
@@ -141,9 +140,9 @@ export async function chunkKnowledgeBase(
     }
   }
 
-  if (documents.length > 0) {
-    await writeChunkDocuments(kb, rag, documents, outputPath);
-  }
+  // Re-chunking clears the KB's rows inside one transaction below; the persist
+  // directory itself is never deleted (it may be user-configured).
+  await writeChunkDocuments(kb, rag, documents, outputPath);
 
   return { files: files.length, chunks: documents.length, outputPath };
 }
@@ -331,10 +330,27 @@ function embeddingModelName(rag: RagSettings): string {
   return rag.embeddingModel.trim();
 }
 
-function openChunkDb(persistDirectory: string): Database {
+function openChunkDb(persistDirectory: string, options: { createSchema?: boolean } = {}): Database {
   mkdirSync(persistDirectory, { recursive: true });
   const db = new Database(join(persistDirectory, "chroma.sqlite3"));
   db.run("PRAGMA journal_mode = WAL;");
+  if (options.createSchema !== false) db.run(CHUNK_SCHEMA);
+  return db;
+}
+
+function openChunkDbChecked(persistDirectory: string): Database {
+  const dbFile = join(persistDirectory, "chroma.sqlite3");
+  const dbExisted = existsSync(dbFile);
+  mkdirSync(persistDirectory, { recursive: true });
+  const db = new Database(dbFile);
+  db.run("PRAGMA journal_mode = WAL;");
+  if (dbExisted && !hasChunksTable(db)) {
+    db.close();
+    throw new Error(
+      `Refusing to write chunks: ${dbFile} exists but is not a Sarma chunk database. ` +
+        "Point chroma_path at an empty directory or a Sarma-created persist directory.",
+    );
+  }
   db.run(CHUNK_SCHEMA);
   return db;
 }
@@ -345,13 +361,13 @@ async function writeChunkDocuments(
   records: ChunkDocument[],
   persistDirectory: string,
 ): Promise<void> {
-  const db = openChunkDb(persistDirectory);
+  const db = openChunkDbChecked(persistDirectory);
   try {
-    db.run("DELETE FROM chunks WHERE knowledge_base = ?", [kb.name]);
-
+    // Embed before touching the DB: a failed embedding call must not wipe the
+    // existing chunks for this knowledge base.
     const embedder = buildEmbeddingModel(rag);
     let embeddings: (number[] | null)[] = records.map(() => null);
-    if (embedder) {
+    if (embedder && records.length > 0) {
       embeddings = await embedder.embedDocuments(records.map((r) => r.text));
     }
 
@@ -360,6 +376,7 @@ async function writeChunkDocuments(
         "VALUES (?, ?, ?, ?, ?, ?)",
     );
     const tx = db.transaction((rows: ChunkDocument[]) => {
+      db.run("DELETE FROM chunks WHERE knowledge_base = ?", [kb.name]);
       rows.forEach((record, i) => {
         const vec = embeddings[i] ?? null;
         insert.run(
@@ -376,6 +393,13 @@ async function writeChunkDocuments(
   } finally {
     db.close();
   }
+}
+
+function hasChunksTable(db: Database): boolean {
+  const row = db
+    .query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'chunks'")
+    .get();
+  return row !== null;
 }
 
 async function searchChunkDatabase(
@@ -398,15 +422,16 @@ async function searchChunkDatabase(
     if (rows.length === 0) return [];
 
     const k = Math.max(1, Math.min(Math.trunc(topK || 5), 10));
-    const hasVectors = rows.every((r) => r.embedding_json);
+    const vectors = rows.map((row) => parseEmbedding(row.embedding_json));
+    const hasVectors = vectors.every((v) => v !== null);
     const embedder = hasVectors ? buildEmbeddingModel(rag) : null;
 
     let scored: { row: (typeof rows)[number]; score: number }[];
     if (embedder) {
       const queryVec = await embedder.embedQuery(query);
-      scored = rows.map((row) => ({
+      scored = rows.map((row, i) => ({
         row,
-        score: cosineSimilarity(queryVec, JSON.parse(row.embedding_json!) as number[]),
+        score: cosineSimilarity(queryVec, vectors[i]!),
       }));
     } else {
       scored = rows.map((row) => ({ row, score: lexicalScore(query, row.text) }));
@@ -516,11 +541,14 @@ function rowsFromChromaSearchRows(rows: unknown[][]) {
   return first.map((row, i) => {
     const obj = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
     const metadata = obj.metadata && typeof obj.metadata === "object" ? (obj.metadata as Record<string, unknown>) : {};
+    // The Search API's Score is a distance (lower is better); convert to a
+    // descending similarity so it ranks consistently with every other backend.
+    const distance = typeof obj.score === "number" ? obj.score : null;
     return {
       text: String(obj.document ?? ""),
       source: String(metadata.source ?? metadata.uri ?? "chroma"),
       chunkIndex: scalarLabel(metadata.chunk_index ?? obj.id, i),
-      score: typeof obj.score === "number" ? obj.score : null,
+      score: distance === null ? null : 1 / (1 + distance),
     };
   });
 }
@@ -530,8 +558,17 @@ function scalarLabel(value: unknown, fallback: number): string | number {
   return fallback;
 }
 
-function cosineSimilarity(a: number[], b: number[]): number {
-  let dot = 0;
+function parseEmbedding(json: string | null): number[] | null {
+  if (!json) return null;
+  try {
+    const value = JSON.parse(json) as unknown;
+    return Array.isArray(value) ? (value as number[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {  let dot = 0;
   let na = 0;
   let nb = 0;
   const len = Math.min(a.length, b.length);
@@ -619,7 +656,9 @@ export function ragKnowledgeBaseName(explicit: string, path: string): string {
 
 function safeName(name: string): string {
   const safe = name.trim().replace(/[^A-Za-z0-9_.-]+/g, "-").replace(/^-+|-+$/g, "");
-  return safe || "knowledge-base";
+  // "." and ".." survive the character whitelist but would escape the base dir.
+  if (!safe || /^\.+$/.test(safe)) return "knowledge-base";
+  return safe;
 }
 
 function expandUser(path: string): string {

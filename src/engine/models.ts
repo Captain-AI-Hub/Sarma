@@ -93,12 +93,15 @@ export class ConversationMessage {
 
   /** Convert to a LangChain BaseMessage so extra fields survive. */
   toLangchainMessage(): BaseMessage {
+    // The persistent id is carried over so a checkpointer-backed graph can
+    // match replayed history messages by id (update-in-place) instead of
+    // appending a duplicate copy of the whole conversation on every turn.
     if (this.role === "tool") {
       // Always degrade to text to avoid orphan ToolMessage issues. The
       // preceding AIMessage in history may lack tool_calls (e.g. after
       // compaction or summarization), which breaks providers that require
       // tool_calls before every ToolMessage.
-      return new AIMessage({ content: this.toolHistoryFallbackText() });
+      return new AIMessage({ content: this.toolHistoryFallbackText(), id: this.id });
     }
 
     // Thinking-mode LLMs (DeepSeek-R1 etc.) require reasoning_content to be
@@ -109,17 +112,17 @@ export class ConversationMessage {
     }
 
     if (this.role === "assistant") {
-      return new AIMessage({ content: this.content, additional_kwargs: additionalKwargs });
+      return new AIMessage({ content: this.content, additional_kwargs: additionalKwargs, id: this.id });
     }
     if (this.role === "user") {
-      return new HumanMessage(this.content);
+      return new HumanMessage({ content: this.content, id: this.id });
     }
     if (this.role === "system") {
-      return new SystemMessage(this.content);
+      return new SystemMessage({ content: this.content, id: this.id });
     }
 
     // Fallback for unknown roles.
-    return new HumanMessage({ content: this.content, additional_kwargs: additionalKwargs });
+    return new HumanMessage({ content: this.content, additional_kwargs: additionalKwargs, id: this.id });
   }
 
   /**

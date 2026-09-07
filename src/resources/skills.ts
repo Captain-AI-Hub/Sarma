@@ -59,7 +59,8 @@ function isFile(p: string): boolean {
 }
 
 function validSkillName(name: string): boolean {
-  return /^[A-Za-z0-9_.-]+$/.test(name);
+  // "." / ".." pass the character whitelist but escape the install directory.
+  return /^[A-Za-z0-9_.-]+$/.test(name) && !/^\.+$/.test(name);
 }
 
 /** Return the skill directory for `name`, local taking precedence. */
@@ -253,6 +254,7 @@ function readZipCentralDirectory(archive: Buffer): ZipEntry[] {
   const entries: ZipEntry[] = [];
   let offset = centralDirOffset;
   for (let i = 0; i < entryCount; i += 1) {
+    if (offset + 46 > archive.length) throw new Error("Invalid zip: central directory entry is out of bounds.");
     if (archive.readUInt32LE(offset) !== 0x02014b50) throw new Error("Invalid zip: malformed central directory.");
     const flags = archive.readUInt16LE(offset + 8);
     const method = archive.readUInt16LE(offset + 10);
@@ -303,7 +305,12 @@ function readZipEntryData(archive: Buffer, entry: ZipEntry): Uint8Array {
   const dataEnd = dataOffset + entry.compressedSize;
   if (dataEnd > archive.length) throw new Error(`Invalid zip: entry data out of bounds for ${entry.name}`);
   const compressed = archive.subarray(dataOffset, dataEnd);
-  const data = entry.method === 0 ? compressed : inflateRawSync(compressed);
+  // Cap inflation at the declared size so a forged header cannot expand into
+  // an unbounded allocation (zip bomb).
+  const data =
+    entry.method === 0
+      ? compressed
+      : inflateRawSync(compressed, { maxOutputLength: entry.uncompressedSize });
   if (data.length !== entry.uncompressedSize) throw new Error(`Invalid zip: size mismatch for ${entry.name}`);
   return data;
 }

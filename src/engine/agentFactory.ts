@@ -64,7 +64,7 @@ export class AgentFactory {
     // 3. Apply one shared policy to MCP and built-in tools.
     const tools = this.toolAssembler.assemble(allTools, config);
 
-    const cacheKey = agentCacheKey(config, serverConfigs, tools);
+    const cacheKey = agentCacheKey(config, serverConfigs, tools, this.pool.generation);
     const cached = this.agentCache.get(cacheKey);
     if (cached !== undefined) return cached;
 

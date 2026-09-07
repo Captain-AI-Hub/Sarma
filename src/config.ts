@@ -30,6 +30,10 @@ const CONTEXT_WINDOW_UNIT_EXPONENTS: Record<string, number> = {
   gb: 3,
   t: 4,
   tb: 4,
+  // Bare "token" suffixes mean no scaling ("200 tokens", "200 tok").
+  token: 0,
+  tokens: 0,
+  tok: 0,
 };
 
 export class ProviderConfig {
@@ -336,6 +340,16 @@ export function ensureWorkspaceConfig(): void {
 function parseModels(data: TomlData): [string, ProviderConfig[]] {
   const models: ProviderConfig[] = [];
   for (const raw of asArray(data.models)) {
+    // A single malformed max_context_tokens must not crash startup; fall back
+    // to the default window (interactive validation still uses the throwing
+    // parseContextWindow).
+    const maxContextTokens = tryParseContextWindow(raw.max_context_tokens) ?? 128_000;
+    if (raw.max_context_tokens !== undefined && tryParseContextWindow(raw.max_context_tokens) === null) {
+      console.error(
+        `Warning: model '${str(raw.name, "default")}' has an invalid max_context_tokens ` +
+          `(${String(raw.max_context_tokens)}); using 128000.`,
+      );
+    }
     models.push(
       new ProviderConfig({
         name: str(raw.name, "default"),
@@ -345,7 +359,7 @@ function parseModels(data: TomlData): [string, ProviderConfig[]] {
         apiMode: str(raw.api_mode, "openai_compatible"),
         temperature: num(raw.temperature, 0.0),
         topP: num(raw.top_p, 1.0),
-        maxContextTokens: parseContextWindow(raw.max_context_tokens),
+        maxContextTokens,
         enabled: raw.enabled === undefined ? true : Boolean(raw.enabled),
       }),
     );
@@ -370,8 +384,8 @@ function parseMcp(data: TomlData): McpServerConfig[] {
         headers: str(srv.headers),
         enabled: srv.enabled === undefined ? true : Boolean(srv.enabled),
         encoding: str(srv.encoding, "utf-8"),
-        timeout: srv.timeout === undefined ? 60.0 : Number(srv.timeout),
-        sseReadTimeout: srv.sse_read_timeout === undefined ? 300.0 : Number(srv.sse_read_timeout),
+        timeout: num(srv.timeout, 60.0),
+        sseReadTimeout: num(srv.sse_read_timeout, 300.0),
       }),
     );
   }

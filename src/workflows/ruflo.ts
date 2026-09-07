@@ -56,15 +56,18 @@ export function buildDelegateTool(
   options: { conversationId?: string; terminalManager?: PersistentTerminalManager | null } = {},
 ): StructuredToolInterface {
   const delegateTask = tool(
-    async ({
-      subagent_name,
-      task,
-      expected_output = "",
-    }: {
-      subagent_name: string;
-      task: string;
-      expected_output?: string;
-    }): Promise<string> => {
+    async (
+      {
+        subagent_name,
+        task,
+        expected_output = "",
+      }: {
+        subagent_name: string;
+        task: string;
+        expected_output?: string;
+      },
+      config?: { signal?: AbortSignal },
+    ): Promise<string> => {
       const label = (subagent_name || "subagent").trim();
       const expected =
         expected_output.trim() || "Return useful findings for the primary agent.";
@@ -91,7 +94,9 @@ ${SUBAGENT_RESULT_TEMPLATE}
       try {
         result = (await subagent.invoke(
           { messages: [new HumanMessage(task)] },
-          { recursionLimit: 100 },
+          // Propagate the outer run's abort signal so cancelling the primary
+          // agent also cancels the in-flight delegated subagent.
+          { recursionLimit: 100, signal: config?.signal },
         )) as { messages?: { content?: unknown }[] };
       } catch (exc) {
         throw new Error(`delegate_task subagent "${label}" failed: ${formatErrorChain(exc)}`);
