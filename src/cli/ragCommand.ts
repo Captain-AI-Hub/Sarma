@@ -81,7 +81,14 @@ export async function ragCommand(args: RagCommandArgs): Promise<void> {
     upsertKnowledgeBase(scopedRag.knowledgeBases, kb);
     // Search the merged config so embedding settings just set are applied.
     config.rag.knowledgeBases = scopedRag.knowledgeBases;
-    const result = await chunkKnowledgeBase(kb, config.rag);
+    let result;
+    try {
+      result = await chunkKnowledgeBase(kb, config.rag);
+    } catch (exc) {
+      printError(exc instanceof Error ? exc.message : String(exc));
+      process.exitCode = 1;
+      return;
+    }
     kbChanged = true;
     printInfo(
       `${pc.green("Chunked")} ${pc.cyan(String(result.files))} file(s) into ` +

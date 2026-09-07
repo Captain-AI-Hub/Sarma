@@ -1463,13 +1463,17 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
   async function statusReport(): Promise<string> {
     const wf = workflow();
     let mcpError = "";
-    try {
-      await session.ensureMcpConnected(wf);
-      setToolCount(session.toolCount);
-      setMcpStatusVersion((v) => v + 1);
-    } catch (exc) {
-      mcpError = exc instanceof Error ? exc.message : String(exc);
-      setMcpStatusVersion((v) => v + 1);
+    // While a turn is running, report current pool state only — reconnecting
+    // would tear the pool down under the in-flight agent.
+    if (!busy()) {
+      try {
+        await session.ensureMcpConnected(wf);
+        setToolCount(session.toolCount);
+        setMcpStatusVersion((v) => v + 1);
+      } catch (exc) {
+        mcpError = exc instanceof Error ? exc.message : String(exc);
+        setMcpStatusVersion((v) => v + 1);
+      }
     }
 
     const provider = resolver.providerFor(wf);
@@ -1567,18 +1571,22 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
       return `model "${target}" has no Model ID. Use /config to edit it.`;
     }
     const previousActive = config.activeModel;
-    config.activeModel = target;
     let savedPath: string;
     let agentsPath = "";
     try {
+      // Mutate inside the try so a failed save leaves no dangling in-memory
+      // state that disagrees with the on-disk config.
+      config.activeModel = target;
       const agentsChanged = retargetAgentsFollowingActive(previousActive);
       savedPath = saveModels(config);
       if (agentsChanged) agentsPath = saveAgents(config);
     } catch (exc) {
+      config.activeModel = previousActive;
       return exc instanceof Error ? exc.message : String(exc);
     }
     resolver = new RuntimePolicyResolver(config);
-    await session.restartRuntime();
+    const restartError = await restartSessionRuntime();
+    if (restartError) return restartError;
     resetLiveTurnState();
     setToolCount(session.toolCount);
     setMcpStatusVersion((v) => v + 1);
@@ -1589,13 +1597,16 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
   async function mcpReport(): Promise<string> {
     const wf = workflow();
     let mcpError = "";
-    try {
-      await session.ensureMcpConnected(wf);
-      setToolCount(session.toolCount);
-      setMcpStatusVersion((v) => v + 1);
-    } catch (exc) {
-      mcpError = exc instanceof Error ? exc.message : String(exc);
-      setMcpStatusVersion((v) => v + 1);
+    // See statusReport: never reconnect the pool mid-turn.
+    if (!busy()) {
+      try {
+        await session.ensureMcpConnected(wf);
+        setToolCount(session.toolCount);
+        setMcpStatusVersion((v) => v + 1);
+      } catch (exc) {
+        mcpError = exc instanceof Error ? exc.message : String(exc);
+        setMcpStatusVersion((v) => v + 1);
+      }
     }
     const statuses = session.poolRef.serverStatuses;
     const byName = new Map(statuses.map((s) => [s.name, s]));
@@ -1685,9 +1696,20 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
     return true;
   }
 
+  /** Restart the session runtime, returning an error message or null. */
+  async function restartSessionRuntime(): Promise<string | null> {
+    try {
+      await session.restartRuntime();
+      return null;
+    } catch (exc) {
+      return `Runtime restart failed: ${exc instanceof Error ? exc.message : String(exc)}`;
+    }
+  }
+
   async function restartRuntime(): Promise<string> {
     if (busy()) return "Cannot restart while a turn is running.";
-    await session.restartRuntime();
+    const error = await restartSessionRuntime();
+    if (error) return error;
     resolver = new RuntimePolicyResolver(config);
     resetLiveTurnState();
     setToolCount(session.toolCount);
@@ -2034,7 +2056,8 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
   }
 
   function validPluginName(name: string): boolean {
-    return /^[A-Za-z0-9_.-]+$/.test(name);
+    // "." / ".." pass the character whitelist but escape the install directory.
+    return /^[A-Za-z0-9_.-]+$/.test(name) && !/^\.+$/.test(name);
   }
 
   async function savePluginSkill(): Promise<string | null> {
@@ -2206,6 +2229,14 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
   }
 
   async function pluginCommand(args: string): Promise<string> {
+    try {
+      return await pluginCommandInner(args);
+    } catch (exc) {
+      return `Plugin command failed: ${exc instanceof Error ? exc.message : String(exc)}`;
+    }
+  }
+
+  async function pluginCommandInner(args: string): Promise<string> {
     const parts = args.trim().split(/\s+/).filter(Boolean);
     if (parts.length === 0) return pluginReport();
     const [action, kind, name, ...rest] = parts;
@@ -2716,7 +2747,8 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
       return exc instanceof Error ? exc.message : String(exc);
     }
     resolver = new RuntimePolicyResolver(config);
-    await session.restartRuntime();
+    const restartError = await restartSessionRuntime();
+    if (restartError) return restartError;
     setConfigVersion((v) => v + 1);
     selectConfigItem(Math.min(idx, config.models.length - 1));
     return `Deleted model "${model.name}". Saved: ${savedPath}`;
@@ -2862,7 +2894,8 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
     }
     // Rebuild the runtime so the new model takes effect immediately.
     resolver = new RuntimePolicyResolver(config);
-    await session.restartRuntime();
+    const restartError = await restartSessionRuntime();
+    if (restartError) return restartError;
     setToolCount(session.toolCount);
     setMcpStatusVersion((v) => v + 1);
     setConfigVersion((v) => v + 1);
@@ -2892,7 +2925,8 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
       return exc instanceof Error ? exc.message : String(exc);
     }
     resolver = new RuntimePolicyResolver(config);
-    await session.restartRuntime();
+    const restartError = await restartSessionRuntime();
+    if (restartError) return restartError;
     setToolCount(session.toolCount);
     setMcpStatusVersion((v) => v + 1);
     setConfigVersion((v) => v + 1);

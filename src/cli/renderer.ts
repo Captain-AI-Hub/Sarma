@@ -37,13 +37,16 @@ export class StreamPrinter {
     process.stdout.write(line + "\n");
   }
 
-  startTool(name: string): void {
-    this.toolStart.set(name, Date.now());
+  startTool(name: string, callId = ""): void {
+    // Key by call id when available: parallel same-name tools (e.g.
+    // delegate_task fan-out) must not clobber each other's start times.
+    this.toolStart.set(callId || name, Date.now());
   }
 
-  endTool(name: string): number {
-    const start = this.toolStart.get(name);
-    this.toolStart.delete(name);
+  endTool(name: string, callId = ""): number {
+    const key = callId || name;
+    const start = this.toolStart.get(key);
+    this.toolStart.delete(key);
     return start ? (Date.now() - start) / 1000 : 0;
   }
 
@@ -120,14 +123,14 @@ export function handleEvent(event: StreamEvent, printer: StreamPrinter): void {
     process.stdout.write(pc.dim("─".repeat(40)) + "\n");
   } else if (etype === StreamEventType.TOOL_START) {
     const name = (payload.tool_name as string) || "?";
-    printer.startTool(name);
+    printer.startTool(name, (payload.tool_call_id as string) || "");
     printer.toolLine(name, truncate((payload.args_json as string) || "", 100));
   } else if (etype === StreamEventType.TOOL_RESULT) {
     const name = (payload.tool_name as string) || "?";
-    printer.toolResultLine(name, truncate((payload.result_summary as string) || "", 160), printer.endTool(name));
+    printer.toolResultLine(name, truncate((payload.result_summary as string) || "", 160), printer.endTool(name, (payload.tool_call_id as string) || ""));
   } else if (etype === StreamEventType.TOOL_ERROR) {
     const name = (payload.tool_name as string) || "?";
-    printer.toolErrorLine(name, truncate((payload.error_text as string) || "", 160), printer.endTool(name));
+    printer.toolErrorLine(name, truncate((payload.error_text as string) || "", 160), printer.endTool(name, (payload.tool_call_id as string) || ""));
   } else if (etype === StreamEventType.STAGE_START) {
     const name = (payload.stage as string) || "";
     if (name) {

@@ -1141,11 +1141,16 @@ export function App(props: AppProps) {
         props.onExit();
         break;
       case "clear":
-        c.newConversation();
+        // Swapping conversation/history mid-turn corrupts persistence: the
+        // running turn would write its final message into the new session.
+        if (c.busy()) c.note("Cannot clear while a turn is running.");
+        else c.newConversation();
         break;
       case "workflow":
         if (!arg) {
           c.openWorkflowPicker();
+        } else if (c.busy()) {
+          c.note("Cannot switch workflow while a turn is running.");
         } else if (c.workflows().includes(arg)) {
           c.setWorkflow(arg);
           c.note(`switched to workflow: ${arg}`);
@@ -1182,6 +1187,8 @@ export function App(props: AppProps) {
       case "resume":
         if (!arg) {
           c.note("usage: /resume <session-id>");
+        } else if (c.busy()) {
+          c.note("Cannot resume a session while a turn is running.");
         } else if (!c.resumeSession(arg)) {
           c.note(`session ${arg} not found`);
         }
