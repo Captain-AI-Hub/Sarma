@@ -38,10 +38,12 @@ import { AUDIT_SLIM_SUBAGENT_ORDER } from "@/workflows/auditSlimSubagents";
 import { RuntimePolicyResolver } from "@/runtime/resolver";
 import { listAvailableSkills } from "@/resources/skills";
 import { knowledgeBaseChromaPath, upsertKnowledgeBase } from "@/resources/rag";
-import { type TranscriptItem, type ToolEntry, type SubagentEntry, nextId } from "@/tui/transcript";
-import { debugEnabled, debugLog, debugLogFile, setDebugEnabled } from "@/debug";
+import { type TranscriptItem, type SubagentEntry, nextId } from "@/tui/transcript";
+import { debugLog } from "@/debug";
 import * as paths from "@/paths";
 import { getWorkflowMeta } from "@/workflows";
+import { createDraftBuffer } from "@/tui/draftBuffer";
+import { createReports, formatList, mcpTarget } from "@/tui/reports";
 import {
   messageContentText,
   parseContextSize,
@@ -409,40 +411,18 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
   const [activeWorkflowNode, setActiveWorkflowNode] = createSignal("");
   // Bumped whenever config changes so model-derived getters re-run.
   const [configVersion, setConfigVersion] = createSignal(0);
-  let pendingDraftText = "";
-  let pendingDraftReasoning = "";
-  let draftFlushTimer: ReturnType<typeof setTimeout> | undefined;
-
-  function clearDraftFlushTimer(): void {
-    if (draftFlushTimer) clearTimeout(draftFlushTimer);
-    draftFlushTimer = undefined;
-  }
-
-  function flushDraftBuffers(): void {
-    clearDraftFlushTimer();
-    const text = pendingDraftText;
-    const reasoning = pendingDraftReasoning;
-    pendingDraftText = "";
-    pendingDraftReasoning = "";
-    if (reasoning) setDraftReasoning((prev) => prev + reasoning);
-    if (text) setDraft((prev) => prev + text);
-  }
-
-  function scheduleDraftFlush(): void {
-    if (draftFlushTimer) return;
-    draftFlushTimer = setTimeout(() => flushDraftBuffers(), 32);
-  }
-
-  function appendDraftText(content: string, reasoning: string): void {
-    if (!content && !reasoning) return;
-    pendingDraftText += content;
-    pendingDraftReasoning += reasoning;
-    if (pendingDraftText.length + pendingDraftReasoning.length >= 2048) {
-      flushDraftBuffers();
-    } else {
-      scheduleDraftFlush();
-    }
-  }
+  const draftBuffer = createDraftBuffer(setDraft, setDraftReasoning);
+  const reports = createReports({
+    config,
+    resolver: () => resolver,
+    session,
+    store,
+    workflow,
+    busy,
+    stages: () => stages,
+    setToolCount,
+    bumpMcpStatusVersion: () => setMcpStatusVersion((v) => v + 1),
+  });
 
   const modelName = () => {
     configVersion();
@@ -741,7 +721,7 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
   }
 
   function commitDraft(): void {
-    flushDraftBuffers();
+    draftBuffer.flush();
     const text = draft();
     const reasoning = draftReasoning();
     if (text || reasoning) {
@@ -766,7 +746,7 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
           if (implicit) {
             appendSubagentStream(implicit.name, implicit.toolCallId, t, r);
           } else {
-            appendDraftText(t, r);
+            draftBuffer.append(t, r);
           }
         }
         break;
@@ -1074,9 +1054,7 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
   }
 
   function resetLiveTurnState(): void {
-    clearDraftFlushTimer();
-    pendingDraftText = "";
-    pendingDraftReasoning = "";
+    draftBuffer.reset();
     setDraft("");
     setDraftReasoning("");
     toolStart.clear();
@@ -1298,26 +1276,13 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
     // Idempotent: signal handlers and the normal exit path may both call this.
     if (closed) return;
     closed = true;
-    clearDraftFlushTimer();
+    draftBuffer.clearTimer();
     await session.close();
     store.close();
   }
 
   function note(text: string): void {
     push({ kind: "note", id: nextId("n"), text });
-  }
-
-  function boolStatus(value: boolean): string {
-    return value ? "enabled" : "disabled";
-  }
-
-  function formatList(values: string[]): string {
-    return values.length > 0 ? values.join(", ") : "(none)";
-  }
-
-  function mcpTarget(server: McpServerConfig): string {
-    if (server.transport === "stdio") return [server.command, server.args].filter(Boolean).join(" ");
-    return server.url;
   }
 
   function parseList(value: string, dflt: string[] = []): string[] {
@@ -1453,115 +1418,13 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
     });
   }
 
-  function formatDate(value: string): string {
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return value || "(unknown)";
-    return d.toLocaleString();
-  }
-
-  async function statusReport(): Promise<string> {
-    const wf = workflow();
-    let mcpError = "";
-    // While a turn is running, report current pool state only — reconnecting
-    // would tear the pool down under the in-flight agent.
-    if (!busy()) {
-      try {
-        await session.ensureMcpConnected(wf);
-        setToolCount(session.toolCount);
-        setMcpStatusVersion((v) => v + 1);
-      } catch (exc) {
-        mcpError = exc instanceof Error ? exc.message : String(exc);
-        setMcpStatusVersion((v) => v + 1);
-      }
-    }
-
-    const provider = resolver.providerFor(wf);
-    const enabledServers = config.mcpServers.filter((server) => server.enabled);
-    const statuses = session.poolRef.serverStatuses;
-    const byName = new Map(statuses.map((s) => [s.name, s]));
-    const skills = listAvailableSkills();
-    const lines = [
-      "status:",
-      `  workflow: ${wf}`,
-      `  model: ${provider.modelName || "(unset)"} via ${provider.name || "(unnamed)"}`,
-      `  api mode: ${provider.apiMode}`,
-      `  context: ${provider.maxContextTokens.toLocaleString()} tokens`,
-      `  mcp: ${session.poolRef.isConnected && !mcpError ? "connected" : "not connected"}`,
-      `  tools: ${session.toolCount}`,
-      `  skills: ${formatList(skills)}`,
-    ];
-
-    if (enabledServers.length === 0) {
-      lines.push("  servers: (none)");
-    } else {
-      lines.push("  servers:");
-      for (const server of enabledServers) {
-        const st = byName.get(server.name);
-        const state = st?.connected ? "connected" : st?.error || mcpError ? "error" : "not connected";
-        const detail = st?.error || (state === "error" ? mcpError : "");
-        lines.push(
-          `    - ${server.name}: ${state}, ${st?.toolCount ?? 0} tool(s)` +
-            (detail ? ` (${detail})` : ""),
-        );
-      }
-    }
-    return lines.join("\n");
-  }
-
-  function graphReport(): string {
-    const gs = session.graphState;
-    const stageNames = stages.map((s) => s.name);
-    const lines = [
-      "graph:",
-      `  workflow: ${workflow()}`,
-      `  current: ${gs.current_stage || "(idle)"}`,
-      `  completed: ${formatList([...gs.completed])}`,
-      `  failed: ${gs.failed || "(none)"}`,
-      `  gapfill loops: ${gs.gapfill_loops}`,
-      `  feedback loops: ${gs.feedback_loops}`,
-    ];
-    if (stageNames.length > 0) {
-      lines.push("  stages:");
-      for (const stage of stages) lines.push(`    - ${stage.name}: ${stage.status}`);
-    } else {
-      lines.push("  stages: single-agent workflow");
-    }
-    return lines.join("\n");
-  }
-
-  function modelsReport(): string {
-    const lines = ["models:"];
-    for (const model of config.models) {
-      const active = model.name === config.activeModel ? "*" : "-";
-      lines.push(
-        `  ${active} ${model.name}: ${model.modelName || "(unset)"} ` +
-          `[${model.apiMode}, ${boolStatus(model.enabled)}, ${model.maxContextTokens.toLocaleString()} ctx]`,
-      );
-    }
-    lines.push(`assignments for ${workflow()}:`);
-    for (const [agent, model] of resolver.modelAssignmentsFor(workflow())) {
-      lines.push(`  - ${agent}: ${model}`);
-    }
-    return lines.join("\n");
-  }
-
-  function modelReport(): string {
-    return [
-      modelsReport(),
-      "",
-      "usage:",
-      "  /model <name>   select the active model",
-      "  /config         add or edit model providers",
-    ].join("\n");
-  }
-
   async function selectModel(name: string): Promise<string> {
     if (busy()) return "Cannot switch model while a turn is running.";
     const target = name.trim();
-    if (!target) return modelReport();
+    if (!target) return reports.modelReport();
     const provider = config.models.find((model) => model.name === target);
     if (!provider) {
-      return `unknown model: ${target}\n${modelReport()}`;
+      return `unknown model: ${target}\n${reports.modelReport()}`;
     }
     if (!provider.enabled) {
       return `model is disabled: ${target}`;
@@ -1591,88 +1454,6 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
     setMcpStatusVersion((v) => v + 1);
     setConfigVersion((v) => v + 1);
     return `selected model: ${target} (${provider.modelName})\nsaved: ${savedPath}${agentsPath ? `\nsaved: ${agentsPath}` : ""}`;
-  }
-
-  async function mcpReport(): Promise<string> {
-    const wf = workflow();
-    let mcpError = "";
-    // See statusReport: never reconnect the pool mid-turn.
-    if (!busy()) {
-      try {
-        await session.ensureMcpConnected(wf);
-        setToolCount(session.toolCount);
-        setMcpStatusVersion((v) => v + 1);
-      } catch (exc) {
-        mcpError = exc instanceof Error ? exc.message : String(exc);
-        setMcpStatusVersion((v) => v + 1);
-      }
-    }
-    const statuses = session.poolRef.serverStatuses;
-    const byName = new Map(statuses.map((s) => [s.name, s]));
-    const lines = [
-      "mcp:",
-      `  workflow: ${wf}`,
-      `  connected: ${session.poolRef.isConnected && !mcpError ? "yes" : "no"}`,
-      `  tools: ${session.toolCount}`,
-      `  local: ${paths.localMcpFile()}`,
-      `  global: ${paths.globalMcpFile()}`,
-      "  servers:",
-    ];
-    if (config.mcpServers.length === 0) {
-      lines.push("    (none)");
-    } else {
-      for (const server of config.mcpServers) {
-        const st = byName.get(server.name);
-        const state = !server.enabled
-          ? "disabled"
-          : st?.connected
-            ? "connected"
-            : st?.error || mcpError
-              ? "error"
-              : "not connected";
-        const detail = st?.error || (state === "error" ? mcpError : "");
-        lines.push(
-          `    - ${server.name}: ${server.transport}, ${state}, ${st?.toolCount ?? 0} tool(s)` +
-            (detail ? ` (${detail})` : ""),
-        );
-      }
-    }
-    return lines.join("\n");
-  }
-
-  function agentSkillRows(): string[] {
-    const wf = workflow();
-    const rows: string[] = [];
-    for (const agent of config.agents) {
-      if (agent.name === wf || agent.name.startsWith(`${wf}.`)) {
-        rows.push(`    - ${agent.name}: ${formatList(agent.skills)}`);
-      }
-    }
-    if (rows.length === 0) rows.push(`    - ${wf}: (none)`);
-    return rows;
-  }
-
-  function skillsReport(): string {
-    return [
-      "skills:",
-      `  installed: ${formatList(listAvailableSkills())}`,
-      `  local: ${paths.localSkillsDir()}`,
-      `  global: ${paths.globalSkillsDir()}`,
-      `  workflow assignments (${workflow()}):`,
-      ...agentSkillRows(),
-    ].join("\n");
-  }
-
-  function sessionsReport(limit = 20): string {
-    const rows = store.listConversations(limit);
-    if (rows.length === 0) return "sessions:\n  (no sessions yet)";
-    const lines = ["sessions:"];
-    for (const row of rows) {
-      const title = row.title || "Untitled session";
-      const model = row.model_name || "(unset)";
-      lines.push(`  ${row.id}  ${title}  [${model}, ${row.status}, ${formatDate(row.updated_at)}]`);
-    }
-    return lines.join("\n");
   }
 
   function resumeSession(sessionId: string): boolean {
@@ -2185,38 +1966,6 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
     return null;
   }
 
-  function pluginReport(): string {
-    const lines = [
-      "plugins:",
-      "  usage:",
-      "    /plugin add mcp <name> <url-or-command> [--global]",
-      "    /plugin add skill <name> [--global]",
-      "    /plugin enable mcp <name>",
-      "    /plugin disable mcp <name>",
-      "    /plugin enable skill <name>",
-      "    /plugin disable skill <name>",
-      `  local mcp: ${paths.localMcpFile()}`,
-      `  global mcp: ${paths.globalMcpFile()}`,
-      `  local skills: ${paths.localSkillsDir()}`,
-      `  global skills: ${paths.globalSkillsDir()}`,
-      "  mcp servers:",
-    ];
-    if (config.mcpServers.length === 0) {
-      lines.push("    (none)");
-    } else {
-      for (const server of config.mcpServers) {
-        const target =
-          server.transport === "stdio" ? [server.command, server.args].filter(Boolean).join(" ") : server.url;
-        lines.push(
-          `    - ${server.name}: ${server.transport}, ${boolStatus(server.enabled)}` +
-            (target ? `, ${target}` : ""),
-        );
-      }
-    }
-    lines.push(`  skills: ${formatList(listAvailableSkills())}`);
-    return lines.join("\n");
-  }
-
   function agentForCurrentWorkflow(): AgentConfig {
     const wf = workflow();
     let agent = config.agents.find((item) => item.name === wf);
@@ -2237,13 +1986,13 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
 
   async function pluginCommandInner(args: string): Promise<string> {
     const parts = args.trim().split(/\s+/).filter(Boolean);
-    if (parts.length === 0) return pluginReport();
+    if (parts.length === 0) return reports.pluginReport();
     const [action, kind, name, ...rest] = parts;
     const normalizedAction = (action ?? "").toLowerCase();
     const normalizedKind = (kind ?? "").toLowerCase();
     const pluginName = (name ?? "").trim();
     if (!["add", "enable", "disable"].includes(normalizedAction) || !["mcp", "skill"].includes(normalizedKind) || !pluginName) {
-      return pluginReport();
+      return reports.pluginReport();
     }
     const scopeFlag = rest.includes("--global") ? "global" : "local";
     const targetParts = rest.filter((part) => part !== "--global" && part !== "--local");
@@ -2605,50 +2354,6 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
     }
   }
 
-  function ragReport(): string {
-    const rag = config.rag;
-    const lines = [
-      "rag:",
-      `  embedding_backend: ${rag.embeddingBackend}`,
-      `  embedding_model: ${rag.embeddingModel || "(unset)"}`,
-      `  embedding_api_base: ${rag.embeddingApiBase || "(unset)"}`,
-      `  embedding_local_path: ${rag.embeddingLocalPath || "(default)"}`,
-      `  chunk_size: ${rag.chunkSize}`,
-      `  chunk_overlap: ${rag.chunkOverlap}`,
-      "  knowledge_bases:",
-    ];
-    if (rag.knowledgeBases.length === 0) {
-      lines.push("    (none)");
-    } else {
-      for (const kb of rag.knowledgeBases) {
-        const target =
-          kb.backend === "chroma_http"
-            ? `${kb.chromaUrl || "(unset)"} collection=${kb.collectionName || kb.name || "(unset)"}`
-            : knowledgeBaseChromaPath(kb);
-        lines.push(
-          `    - ${kb.name || "(unnamed)"}: ${boolStatus(kb.enabled)}, backend=${kb.backend}, ` +
-            `docs=${kb.docsPath || "(default)"}, chroma=${target}`,
-        );
-      }
-    }
-    lines.push("  cli: sarma rag --help");
-    return lines.join("\n");
-  }
-
-  function debugReport(arg = ""): string {
-    const action = arg.trim().toLowerCase();
-    if (["on", "enable", "enabled", "1", "true"].includes(action)) setDebugEnabled(true);
-    if (["off", "disable", "disabled", "0", "false"].includes(action)) setDebugEnabled(false);
-    debugLog("debug command invoked", { action: action || "status" });
-    return [
-      "debug:",
-      `  enabled: ${debugEnabled() ? "yes" : "no"}`,
-      `  log: ${debugLogFile()}`,
-      "  usage: /debug on | /debug off | /debug",
-      "  env: SARMA_DEBUG=1 SARMA_DEBUG_LOG=<path>",
-    ].join("\n");
-  }
-
   function setConfigSection(section: ConfigSection): void {
     setConfigSectionSig(section);
     setConfigStep("browse");
@@ -2968,18 +2673,18 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
     closeGraph,
     newConversation,
     note,
-    statusReport,
-    graphReport,
-    modelReport,
+    statusReport: reports.statusReport,
+    graphReport: reports.graphReport,
+    modelReport: reports.modelReport,
     selectModel,
-    modelsReport,
-    mcpReport,
-    skillsReport,
-    sessionsReport,
+    modelsReport: reports.modelsReport,
+    mcpReport: reports.mcpReport,
+    skillsReport: reports.skillsReport,
+    sessionsReport: reports.sessionsReport,
     resumeSession,
     restartRuntime,
     compactContext,
-    pluginReport,
+    pluginReport: reports.pluginReport,
     pluginCommand,
     pluginOpen,
     pluginSection,
@@ -3008,7 +2713,7 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
     setPluginSkillField,
     savePluginSkill,
     backToPluginBrowse,
-    ragReport,
+    ragReport: reports.ragReport,
     ragOpen,
     ragSection,
     ragStep,
@@ -3035,7 +2740,7 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
     saveRagKnowledgeBase,
     runRagSearch,
     backToRagBrowse,
-    debugReport,
+    debugReport: reports.debugReport,
     hasModel,
     modelPickerOpen,
     modelPickerSelectedIndex,

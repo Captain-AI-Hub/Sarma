@@ -318,14 +318,6 @@ function embeddingModelName(rag: RagSettings): string {
   return rag.embeddingModel.trim();
 }
 
-function openChunkDb(persistDirectory: string, options: { createSchema?: boolean } = {}): Database {
-  mkdirSync(persistDirectory, { recursive: true });
-  const db = new Database(join(persistDirectory, "chroma.sqlite3"));
-  db.run("PRAGMA journal_mode = WAL;");
-  if (options.createSchema !== false) db.run(CHUNK_SCHEMA);
-  return db;
-}
-
 function openChunkDbChecked(persistDirectory: string): Database {
   const dbFile = join(persistDirectory, "chroma.sqlite3");
   const dbExisted = existsSync(dbFile);

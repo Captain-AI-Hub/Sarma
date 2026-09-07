@@ -357,11 +357,6 @@ export class Session {
     this._graphState = Session.freshGraphState();
   }
 
-  private contextBudget(workflow: string): number {
-    const provider = this.resolver.providerFor(workflow);
-    return Math.max(Math.trunc(provider.maxContextTokens || 128_000), 1);
-  }
-
   private compactorForWorkflow(workflow: string, systemPrompt = ""): ContextCompactor {
     const provider = this.resolver.providerFor(workflow);
     const estimateText = createTokenEstimator(provider);
