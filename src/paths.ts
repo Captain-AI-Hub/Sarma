@@ -33,20 +33,8 @@ export function localDir(): string {
 export function globalModelsFile(): string {
   return join(globalDir(), MODELS_NAME);
 }
-export function localModelsFile(): string {
-  return join(localDir(), MODELS_NAME);
-}
-export function globalConfigFile(): string {
-  return globalModelsFile();
-}
-export function localConfigFile(): string {
-  return localModelsFile();
-}
 export function globalAgentsFile(): string {
   return join(globalDir(), AGENTS_NAME);
-}
-export function localAgentsFile(): string {
-  return join(localDir(), AGENTS_NAME);
 }
 export function globalMcpFile(): string {
   return join(globalDir(), MCP_NAME);

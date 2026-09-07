@@ -68,11 +68,6 @@ export interface ChunkResult {
   outputPath: string;
 }
 
-export interface PullResult {
-  model: string;
-  path: string;
-}
-
 export interface ChunkDatabaseInfo {
   path: string;
   records: number;
@@ -159,13 +154,6 @@ export function buildEmbeddingModel(rag: RagSettings): EmbeddingModel | null {
   // The HuggingFace local backend has no Bun-native runtime here; callers fall
   // back to lexical search. Returning null signals "no vectors available".
   return null;
-}
-
-export function pullEmbeddingModel(_rag: RagSettings): PullResult {
-  throw new Error(
-    "Local HuggingFace model pulling is not supported in the TypeScript port. " +
-      "Use the 'api' embedding backend (set rag.embedding_backend = \"api\").",
-  );
 }
 
 export function buildRagSearchTool(rag: RagSettings): StructuredToolInterface {

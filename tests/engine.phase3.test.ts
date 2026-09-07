@@ -4,7 +4,6 @@ import { AUDIT_SUBAGENTS } from "@/workflows/auditSubagents";
 import { buildAuditSlimGraph, DEFAULT_MAX_VERIFY_FEEDBACK } from "@/workflows/auditSlimGraph";
 import { AUDIT_SLIM_SUBAGENTS } from "@/workflows/auditSlimSubagents";
 import { buildSystemPrompt, RUFLO_SYSTEM_PROMPT, BASE_SYSTEM_PROMPT } from "@/engine/prompts";
-import { buildRufloPrompt } from "@/workflows/ruflo";
 import { ResolvedSkill } from "@/engine/models";
 import { EventTranslator, ORCHESTRATOR } from "@/engine/streaming";
 import { StreamEventType } from "@/engine/enums";
@@ -231,12 +230,6 @@ describe("prompt assembly", () => {
     const idxSkill = p.indexOf("SKILL-SUFFIX");
     expect(idxOverride).toBeGreaterThan(0);
     expect(idxSkill).toBeGreaterThan(idxOverride);
-  });
-  test("buildRufloPrompt joins base and ruflo prompt", () => {
-    const p = buildRufloPrompt("BASE");
-    expect(p).toContain("BASE");
-    expect(p).toContain("Ruflo mode");
-    expect(p).toContain("---");
   });
   test("audit subagent prompt matches Python: stage prompt plus stage skill only", () => {
     const skill = new ResolvedSkill({ name: "stage", systemPromptSuffix: "STAGE-SKILL" });

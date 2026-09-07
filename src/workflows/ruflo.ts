@@ -5,6 +5,9 @@
  * but gives it a controlled delegation tool for spawning focused subagents.
  * Each subagent returns a compact result template instead of a full reasoning
  * trace.
+ *
+ * The Ruflo system prompt lives in `engine/prompts.ts` (RUFLO_SYSTEM_PROMPT,
+ * applied by the runtime resolver); this module owns delegation only.
  */
 
 import { z } from "zod";
@@ -16,23 +19,6 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { buildAgentMiddlewareForModel } from "@/runtime/middleware";
 import type { PersistentTerminalManager } from "@/resources/terminalTools";
 
-export const RUFLO_SYSTEM_PROMPT = `You are Sarma running in Ruflo mode.
-
-You are the primary agent. You may solve tasks directly or delegate focused
-subtasks to subagents with the delegate_task tool. Use delegation when a task
-benefits from independent investigation, tool-heavy exploration, or parallel
-lines of inquiry. Keep the conversation concise and synthesize compact results
-from subagents instead of replaying their full work.
-
-When delegating:
-- give the subagent a specific task and expected output
-- ask for evidence and useful artifacts, not private reasoning
-- combine multiple subagent results into a final user-facing answer
-
-Do not expose hidden chain-of-thought. Provide concise reasoning summaries,
-conclusions, evidence, and next actions.
-`;
-
 export const SUBAGENT_RESULT_TEMPLATE = `Return only this result template. Do not include hidden chain-of-thought,
 private reasoning, or a full transcript.
 
@@ -43,11 +29,6 @@ Result:
 - Risks or confidence:
 - Recommended next action:
 `;
-
-/** Compose the Ruflo primary-agent prompt. */
-export function buildRufloPrompt(basePrompt: string): string {
-  return `${basePrompt.trim()}\n\n---\n\n${RUFLO_SYSTEM_PROMPT.trim()}`;
-}
 
 /** Create the Ruflo delegation tool. */
 export function buildDelegateTool(

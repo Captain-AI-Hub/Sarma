@@ -37,16 +37,15 @@ import { AUDIT_SUBAGENT_ORDER } from "@/workflows/auditSubagents";
 import { AUDIT_SLIM_SUBAGENT_ORDER } from "@/workflows/auditSlimSubagents";
 import { RuntimePolicyResolver } from "@/runtime/resolver";
 import { listAvailableSkills } from "@/resources/skills";
+import { knowledgeBaseChromaPath, upsertKnowledgeBase } from "@/resources/rag";
 import { type TranscriptItem, type ToolEntry, type SubagentEntry, nextId } from "@/tui/transcript";
 import { debugEnabled, debugLog, debugLogFile, setDebugEnabled } from "@/debug";
 import * as paths from "@/paths";
 import { getWorkflowMeta } from "@/workflows";
 import {
-  knowledgeBaseChromaPath,
   messageContentText,
   parseContextSize,
   truncateStatus,
-  upsertKnowledgeBase,
 } from "@/tui/controllerHelpers";
 import { providerFromModelDraft as buildProviderFromModelDraft } from "@/tui/modelConfigHelpers";
 
