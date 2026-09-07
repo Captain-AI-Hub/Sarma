@@ -32,6 +32,8 @@ import { type CliConfig, type ProviderConfig } from "@/config";
 import { RuntimePolicyResolver } from "@/runtime/resolver";
 import { AgentRuntimeServices } from "@/runtime/services";
 import { runtimeStaticToolCount, isBuiltinToolName } from "@/runtime/toolPolicy";
+import { writeRunReport } from "@/reports";
+import { debugLog } from "@/debug";
 import { Store } from "@/store";
 import { defaultWorkflowName, getWorkflowMeta } from "@/workflows";
 
@@ -344,7 +346,27 @@ export class Session {
         }
         this.store.updateConversation(this._conversationId, updateFields);
       }
-      yield makeRunCompletedEvent(this._conversationId, turnId, finalContent);
+
+      // Persist the run as a markdown report under .sarma/reports/: stage
+      // outputs for graph workflows, the assistant answer for ruflo. A write
+      // failure must not fail the completed turn.
+      let reportPath = "";
+      if (finalContent) {
+        try {
+          reportPath = writeRunReport({
+            workflow: mode,
+            conversationId: this._conversationId,
+            turnId,
+            modelName: runPlan.provider.modelName,
+            task: userMessage,
+            stageOutputs: runner.stageOutputsSnapshot,
+            finalContent,
+          });
+        } catch (exc) {
+          debugLog("Run report write failed", exc);
+        }
+      }
+      yield makeRunCompletedEvent(this._conversationId, turnId, finalContent, reportPath);
     } catch (exc) {
       const message = abortController.signal.aborted ? "Run cancelled." : exc instanceof Error ? exc.message : String(exc);
       yield makeRunFailedEvent(this._conversationId, turnId, message);

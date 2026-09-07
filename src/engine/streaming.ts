@@ -670,12 +670,16 @@ export function makeRunCompletedEvent(
   conversationId: string,
   turnId: string,
   assistantContent = "",
+  reportPath = "",
 ): StreamEvent {
   return new StreamEvent({
     type: StreamEventType.RUN_COMPLETED,
     conversationId,
     turnId,
-    payload: { assistant_message: assistantContent },
+    payload: {
+      assistant_message: assistantContent,
+      ...(reportPath ? { report_path: reportPath } : {}),
+    },
     timestamp: nowSeconds(),
   });
 }

@@ -978,6 +978,12 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
         }
         break;
       }
+      case StreamEventType.RUN_COMPLETED: {
+        commitDraft();
+        const reportPath = (p.report_path as string) || "";
+        if (reportPath) note(`Report saved: ${reportPath}`);
+        break;
+      }
       case StreamEventType.RUN_FAILED: {
         commitDraft();
         push({ kind: "error", id: nextId("e"), text: (p.error as string) || "Unknown error" });

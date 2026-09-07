@@ -67,6 +67,10 @@ export function ragModelsDir(): string {
 export function dbPath(): string {
   return join(localDir(), "db.sqlite");
 }
+/** Per-run markdown reports live per-workspace. */
+export function reportsDir(): string {
+  return join(localDir(), "reports");
+}
 /** Line-based user input history for the full-screen TUI. */
 export function inputHistoryFile(): string {
   return join(localDir(), INPUT_HISTORY_NAME);

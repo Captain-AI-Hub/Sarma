@@ -149,6 +149,12 @@ export function handleEvent(event: StreamEvent, printer: StreamPrinter): void {
   } else if (etype === StreamEventType.SUBAGENT_COMPLETE) {
     const name = (payload.subagent as string) || "";
     if (name) printer.subagentCompleteLine(name, printer.endSubagent(name));
+  } else if (etype === StreamEventType.RUN_COMPLETED) {
+    printer.flush();
+    const reportPath = (payload.report_path as string) || "";
+    if (reportPath) {
+      process.stdout.write(pc.dim(`Report saved: ${reportPath}`) + "\n");
+    }
   } else if (etype === StreamEventType.RUN_FAILED) {
     printer.flush();
     printError(`Agent run failed: ${(payload.error as string) || "Unknown error"}`);

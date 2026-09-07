@@ -81,6 +81,11 @@ export class AgentRunner {
     return this.assistantContent;
   }
 
+  /** Copy of the latest `stage_outputs` seen on the outer graph stream. */
+  get stageOutputsSnapshot(): Record<string, string> {
+    return { ...this.stageOutputs };
+  }
+
   private readonly opts: Required<
     Omit<AgentRunnerOptions, "rag" | "abortSignal">
   > & { rag: RagConfigDTO; abortSignal: AbortSignal | null };
