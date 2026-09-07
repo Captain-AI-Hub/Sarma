@@ -4,9 +4,10 @@
   <img src="Sarma.png" width="75%" alt="Sarma">
 </p>
 
-Sarma is a terminal agent for vulnerability auditing. This repository is the
-TypeScript/Bun implementation of Sarma, built on LangChain.js, LangGraph.js,
-OpenTUI/Solid, MCP tools, and layered global/workspace configuration.
+Sarma is a terminal agent for vulnerability auditing and architecture /
+attack-surface analysis. This repository is the TypeScript/Bun implementation
+of Sarma, built on LangChain.js, LangGraph.js, OpenTUI/Solid, MCP tools, and
+layered global/workspace configuration.
 
 Sarma is designed for tool-heavy security work such as IDA-MCP based binary
 analysis, source review, and network probing, but it can use any configured MCP
@@ -20,6 +21,10 @@ server.
   `delegate_task` focused subagents.
 - `audit`: full multi-stage vulnerability discovery workflow.
 - `audit-slim`: compact recon/hunter/verify/report workflow.
+- `analysis`: 7-stage architecture audit and attack-surface analysis workflow
+  with read-only tool filters — no vulnerability validation or PoCs.
+- Per-run markdown reports under `./.sarma/reports/` covering every stage
+  output and the final user-facing result.
 - Per-workflow and per-subagent model, MCP, and skill configuration.
 - `/config` model/workflow configuration TUI.
 - `/plugin` MCP and skill configuration TUI, with local/global install scope.
@@ -51,6 +56,39 @@ sarma
 
 The npm-installed command still runs on Bun because Sarma's executable uses
 `#!/usr/bin/env bun`. Make sure `bun` is available in `PATH`.
+
+### Build A Standalone Binary
+
+Compile a self-contained executable (no `node_modules`, no Bun install needed
+on the target machine):
+
+```bash
+bun run build        # → dist/sarma
+./dist/sarma --version
+```
+
+The version is baked in at build time. The binary supports the same commands
+as the source install, including the full-screen TUI, and ignores any
+`bunfig.toml` in the working directory.
+
+### Local Install Without Publishing
+
+Install the current checkout as a global `sarma` command (runs from source,
+so edits take effect immediately):
+
+```bash
+bun link
+sarma --version      # from any directory
+```
+
+Remove with `bun unlink`.
+
+Or pack and install the tarball exactly as npm would receive it:
+
+```bash
+npm pack                          # → sarma-seek-<version>.tgz
+npm install -g ./sarma-seek-0.2.0.tgz
+```
 
 ## Install From Source
 
@@ -119,13 +157,14 @@ configure RAG model settings and knowledge bases.
 | `ruflo` | Default conversational workflow with optional focused subagent delegation |
 | `audit` | Full vulnerability discovery harness |
 | `audit-slim` | Smaller four-stage audit harness |
+| `analysis` | Architecture audit and attack-surface analysis (no vulnerability exploitation) |
 
 Switch workflows with:
 
 ```text
 /workflow
 /workflow audit
-/workflow audit-slim
+/workflow analysis
 /workflow ruflo
 ```
 
@@ -194,6 +233,54 @@ START -> recon -> hunter <-> verify -> report -> END
 - `verify`: checks whether findings are real and reliable, and sends weak
   findings back to `hunter`.
 - `report`: reports verified findings only.
+
+### Analysis
+
+`analysis` audits architecture and enumerates the attack surface. It does not
+validate or exploit vulnerabilities and produces no PoCs — use `audit` for
+that. Stage tool filters are restricted to read-only inspection tools (no
+patching, debugger writes, or renaming).
+
+```text
+START
+  -> survey
+  -> architecture
+  -> surface
+  -> surface_check
+       -> mapfill -> surface          (bounded by 3 mapfill rounds)
+       -> threatmap
+  -> review
+  -> review_check -> surface | report  (bounded by 2 review rounds)
+  -> END
+```
+
+Stages:
+
+- `survey`: target inventory — metadata, modules, imports/exports, entries.
+- `architecture`: components, layers, dependency direction, data flows, trust
+  boundaries.
+- `surface`: externally reachable entry points as an
+  entry × input-type × reachable-code matrix.
+- `mapfill`: closes coverage gaps the surface router detected.
+- `threatmap`: maps the surface onto STRIDE categories and ranks hotspots by
+  reachability, privilege delta, and data sensitivity.
+- `review`: consistency and coverage review of the accumulated analysis.
+- `report`: architecture assessment, boundary issues, surface matrix, ranked
+  hotspots, and hardening recommendations.
+
+## Run Reports
+
+Every successfully completed turn writes a markdown report under
+`./.sarma/reports/`:
+
+```text
+./.sarma/reports/<timestamp>-<workflow>-<turnId>.md
+```
+
+The file contains run metadata, the user task, and one section per stage
+output (graph workflows) or the assistant answer (`ruflo`). The `report`
+stage's output is the final user-facing result. CLI and TUI print
+`Report saved: <path>` when a report is written.
 
 ## Slash Commands
 
@@ -267,6 +354,7 @@ Workspace config and data:
   rag.toml
   .history
   db.sqlite
+  reports/
   rag/
     docs/
     chroma/
@@ -428,6 +516,8 @@ Useful checks:
 ```bash
 bun run typecheck
 bun test
+bun run lint
+bun run build      # compile dist/sarma
 bun run sarma --help
 ```
 
