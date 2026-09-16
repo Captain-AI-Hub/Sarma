@@ -117,7 +117,7 @@ async function readCapped(response: Response, maxBytes: number): Promise<string>
   return new TextDecoder().decode(merged);
 }
 
-export async function searchWeb(query: string, maxResults = 5, timeout = 10.0): Promise<string> {
+async function searchWeb(query: string, maxResults = 5, timeout = 10.0): Promise<string> {
   const q = query.trim();
   if (!q) return "web_search requires a non-empty query.";
   const limit = Math.max(1, Math.min(Math.trunc(maxResults || 5), 10));
@@ -148,7 +148,7 @@ export async function searchWeb(query: string, maxResults = 5, timeout = 10.0): 
   return lines.join("\n");
 }
 
-export interface FetchUrlOptions {
+interface FetchUrlOptions {
   url: string;
   maxChars?: number;
   timeout?: number;

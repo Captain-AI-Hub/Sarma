@@ -2,12 +2,12 @@
 
 import type { StructuredToolInterface } from "@langchain/core/tools";
 
-export interface ToolFilterSkill {
+interface ToolFilterSkill {
   toolAllowlist: Set<string> | null;
   toolDenylist: Set<string> | null;
 }
 
-export const BUILTIN_TOOL_NAMES = [
+const BUILTIN_TOOL_NAMES = [
   "web_search",
   "fetch_url",
   "http_exchange",
@@ -19,17 +19,17 @@ const BUILTIN_TOOL_NAME_SET = new Set<string>(BUILTIN_TOOL_NAMES);
 
 // Static estimate for tools exposed by deepagents/langchain middleware. Keep
 // this in one place so compaction and tool assembly cannot drift separately.
-export const MIDDLEWARE_TOOL_COUNT = 13;
+const MIDDLEWARE_TOOL_COUNT = 13;
 
 export function isBuiltinToolName(name: string): boolean {
   return BUILTIN_TOOL_NAME_SET.has(name);
 }
 
-export function isBuiltinTool(tool: StructuredToolInterface): boolean {
+function isBuiltinTool(tool: StructuredToolInterface): boolean {
   return isBuiltinToolName(tool.name ?? "");
 }
 
-export function builtinToolCount(rag: { knowledgeBases: { enabled: boolean; name: string }[] }): number {
+function builtinToolCount(rag: { knowledgeBases: { enabled: boolean; name: string }[] }): number {
   const ragEnabled = rag.knowledgeBases.some((kb) => kb.enabled && kb.name);
   return BUILTIN_TOOL_NAMES.length - (ragEnabled ? 0 : 1);
 }
@@ -53,7 +53,7 @@ export function filterToolsBySkill(
   return result;
 }
 
-export function toolNameMatchesServer(toolName: string, serverName: string): boolean {
+function toolNameMatchesServer(toolName: string, serverName: string): boolean {
   return (
     toolName === serverName ||
     toolName.startsWith(`${serverName}_`) ||

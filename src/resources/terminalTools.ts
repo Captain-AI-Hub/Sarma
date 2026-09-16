@@ -34,7 +34,7 @@ interface TerminalSession {
   logFile: string | null;
 }
 
-export interface PersistentTerminalManagerOptions {
+interface PersistentTerminalManagerOptions {
   conversationId?: string;
   logRoot?: string;
 }
@@ -50,7 +50,7 @@ interface TerminalStartArgs {
   maxOutputBytes?: number;
 }
 
-export interface TerminalWriteArgs {
+interface TerminalWriteArgs {
   terminalId: string;
   input: string;
   appendNewline?: boolean;
@@ -58,13 +58,13 @@ export interface TerminalWriteArgs {
   maxOutputBytes?: number;
 }
 
-export interface TerminalReadArgs {
+interface TerminalReadArgs {
   terminalId: string;
   waitMs?: number;
   maxOutputBytes?: number;
 }
 
-export interface TerminalStopArgs {
+interface TerminalStopArgs {
   terminalId: string;
   signal?: NodeJS.Signals;
   waitMs?: number;
@@ -93,9 +93,16 @@ export class PersistentTerminalManager {
   async start(args: TerminalStartArgs): Promise<string> {
     const command = args.command.trim();
     if (!command) return "terminal_start requires a command.";
-    if (this.sessions.size >= MAX_SESSIONS) return `terminal_start reached the session limit (${MAX_SESSIONS}).`;
+    if (this.activeSessionCount() >= MAX_SESSIONS) {
+      return `terminal_start reached the session limit (${MAX_SESSIONS}). Stop exited terminals with terminal_stop to free slots.`; 
+    }
 
-    const id = this.normalizeId(args.terminalId || this.nextId(command));
+    let id: string;
+    try {
+      id = this.normalizeId(args.terminalId || this.nextId(command));
+    } catch (exc) {
+      return `terminal_start invalid input: ${exc instanceof Error ? exc.message : String(exc)}`;
+    }
     if (this.sessions.has(id)) return `terminal_start terminal_id already exists: ${id}`;
 
     let cwd: string;
@@ -144,7 +151,15 @@ export class PersistentTerminalManager {
 
     proc.stdout.on("data", (chunk: Buffer) => this.append(session, chunk));
     proc.stderr.on("data", (chunk: Buffer) => this.append(session, chunk));
+    // Async stream failures (EPIPE when the child dies mid-write) must not
+    // become uncaughtException; record them like any other output.
+    proc.stdin.on("error", (err: Error) => {
+      this.append(session, Buffer.from(`\n[stdin error: ${err.message}]\n`, "utf-8"));
+    });
     proc.on("error", (err) => {
+      // A failed spawn may never emit 'exit'; mark the session dead so it
+      // stops occupying a live slot and writes report the failure.
+      if (!session.exitState) session.exitState = { code: null, signal: null };
       this.append(session, Buffer.from(`\n[process error: ${err.message}]\n`, "utf-8"));
     });
     proc.on("exit", (code, signal) => {
@@ -161,7 +176,7 @@ export class PersistentTerminalManager {
     if (!session) return `terminal_write unknown terminal_id: ${args.terminalId}`;
     if (session.exitState) return `terminal_write ${session.id} is not running.\n${this.formatRead(session, clampOutputBytes(args.maxOutputBytes), "unread output")}`;
 
-    const data = args.input + (args.appendNewline ?? true ? "\n" : "");
+    const data = args.input + ((args.appendNewline ?? true) ? "\n" : "");
     try {
       this.writeLog(session, `\n[stdin ${new Date().toISOString()}]\n${data}`);
       session.proc.stdin.write(data);
@@ -303,7 +318,11 @@ export class PersistentTerminalManager {
     const root = path.resolve(this.workspaceRoot);
     const resolved = path.resolve(root, cwd);
     const relative = path.relative(root, resolved);
-    if (relative && (relative.startsWith("..") || path.isAbsolute(relative))) {
+    // Compare path segments: a workspace entry literally named "..drafts"
+    // must not be rejected by a ".." prefix match.
+    const escapes =
+      path.isAbsolute(relative) || relative.split(path.sep).some((segment) => segment === "..");
+    if (relative && escapes) {
       throw new Error("cwd must stay inside the workspace.");
     }
     return resolved;
@@ -327,6 +346,15 @@ export class PersistentTerminalManager {
     const normalized = id.trim().replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 64);
     if (!normalized) throw new Error("terminal_id is empty after normalization.");
     return normalized;
+  }
+
+  /** Sessions whose process is still running (exited ones stay readable). */
+  private activeSessionCount(): number {
+    let count = 0;
+    for (const session of this.sessions.values()) {
+      if (!session.exitState) count += 1;
+    }
+    return count;
   }
 
   private nextId(command: string): string {

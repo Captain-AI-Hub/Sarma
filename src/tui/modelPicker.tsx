@@ -45,24 +45,22 @@ export function ModelPicker(props: { controller: Controller }) {
 
   useKeyboard((key: { name?: string; sequence?: string }) => {
     if (!c.modelPickerOpen()) return;
+    // Modal overlay: consume every key so nothing types into (or submits
+    // from) the always-focused chat input behind this panel.
+    consumeKey(key);
     if (key.name === "escape") {
-      consumeKey(key);
       return c.closeModelPicker();
     }
     if (key.name === "up") {
-      consumeKey(key);
       return c.moveModelPickerSelection(-1);
     }
     if (key.name === "down") {
-      consumeKey(key);
       return c.moveModelPickerSelection(1);
     }
     if (key.sequence === "c") {
-      consumeKey(key);
       return openConfig();
     }
     if (key.name === "return" || key.name === "enter") {
-      consumeKey(key);
       return void activate();
     }
   });

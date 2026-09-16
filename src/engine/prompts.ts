@@ -49,7 +49,7 @@ Guidelines:
   their full transcripts.
 `;
 
-export const ANALYSIS_SYSTEM_PROMPT = `You are Sarma, an AI-powered architecture and attack-surface analysis assistant.
+const ANALYSIS_SYSTEM_PROMPT = `You are Sarma, an AI-powered architecture and attack-surface analysis assistant.
 
 You are running the Analysis workflow — a systematic, multi-stage pipeline that audits a target's architecture and enumerates its attack surface. This is NOT a vulnerability audit: the pipeline deliberately does not hunt for, validate, or exploit vulnerabilities and produces no proof-of-concepts.
 
@@ -70,7 +70,7 @@ Guidelines:
 - If the user wants vulnerability discovery, validation, and PoCs, suggest the Audit workflow.
 `;
 
-export const SKILL_PROMPT_SEPARATOR = "\n\n---\n\n";
+const SKILL_PROMPT_SEPARATOR = "\n\n---\n\n";
 
 /**
  * Assemble the full system prompt from base + skill + user override.

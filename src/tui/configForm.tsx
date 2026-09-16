@@ -116,55 +116,46 @@ function BrowseView(props: { controller: Controller; setStatus: (text: string) =
 
   useKeyboard((key: { name?: string; ctrl?: boolean; sequence?: string }) => {
     if (!c.configOpen() || c.configStep() !== "browse") return;
+    // Modal overlay: consume every key so nothing types into (or submits
+    // from) the always-focused chat input behind this panel.
+    consumeKey(key);
     if (key.name === "escape") {
-      consumeKey(key);
       return c.closeConfig();
     }
     if (key.name === "left") {
-      consumeKey(key);
       if (c.configSection() === "workflow" && agentPaneActive()) return c.setConfigWorkflowPane("workflows");
       return c.setConfigSection("models");
     }
     if (key.name === "right") {
-      consumeKey(key);
       if (c.configSection() === "workflow" && workflowPaneActive()) return c.setConfigWorkflowPane("agents");
       return c.setConfigSection("workflow");
     }
     if (key.sequence === "m") {
-      consumeKey(key);
       return c.setConfigSection("models");
     }
     if (key.sequence === "w") {
-      consumeKey(key);
       return c.setConfigSection("workflow");
     }
     if (key.name === "tab" && c.configSection() === "workflow") {
-      consumeKey(key);
       c.setConfigWorkflowPane(agentPaneActive() ? "workflows" : "agents");
       return;
     }
     if (key.name === "up") {
-      consumeKey(key);
       return c.moveConfigSelection(-1);
     }
     if (key.name === "down") {
-      consumeKey(key);
       return c.moveConfigSelection(1);
     }
     if (key.sequence === "n" && c.configSection() === "models") {
-      consumeKey(key);
       return c.newConfigModel();
     }
     if (key.sequence === "d" && c.configSection() === "models") {
-      consumeKey(key);
       return void runDelete();
     }
     if (key.sequence === "a" && c.configSection() === "models") {
-      consumeKey(key);
       return void runActivate();
     }
     if (key.name === "return" || key.name === "enter" || key.sequence === "e") {
-      consumeKey(key);
       if (c.configSection() === "models") c.editConfigModel();
       else if (workflowPaneActive()) c.setConfigWorkflowPane("agents");
       else c.editConfigAgent();

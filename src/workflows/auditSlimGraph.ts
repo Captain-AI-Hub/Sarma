@@ -87,7 +87,7 @@ function verifyRouterFromDecision(state: AuditStateType, decision: string): Comm
   return new Command({ goto: "report" });
 }
 
-export interface BuildAuditSlimGraphOptions {
+interface BuildAuditSlimGraphOptions {
   systemPrompt?: string;
   subagentSpecs?: SubagentSpec[];
   subagentModels?: Record<string, BaseChatModel> | null;

@@ -4,6 +4,8 @@
  * These are the only types that should cross the config → engine boundary.
  */
 
+import { McpValidationError } from "@/engine/errors";
+
 interface ModelProviderInit {
   id: number | null;
   name: string;
@@ -80,7 +82,7 @@ function parseJson<T>(raw: string, fallback: T | undefined, fieldName: string): 
     return JSON.parse(raw) as T;
   } catch (exc) {
     const message = exc instanceof Error ? exc.message : String(exc);
-    throw new Error(`Invalid ${fieldName} JSON: ${message}`);
+    throw new McpValidationError(`Invalid ${fieldName} JSON: ${message}`);
   }
 }
 
@@ -146,6 +148,12 @@ export class McpServerDTO {
       if (this.cwd) config.cwd = this.cwd;
       if (this.encoding && this.encoding !== "utf-8") config.encoding = this.encoding;
     } else {
+      // Fail at config time, not deep inside the MCP adapter at connect time.
+      if (!this.url.trim()) {
+        throw new McpValidationError(
+          `MCP server '${this.name}': transport '${transport}' requires a url.`,
+        );
+      }
       config.url = this.url;
       if (this.headers) {
         const headers = parseJson<Record<string, string>>(this.headers, undefined, "headers");
@@ -176,7 +184,7 @@ export class McpServerDTO {
   }
 }
 
-export interface KnowledgeBaseInit {
+interface KnowledgeBaseInit {
   name: string;
   docsPath: string;
   chromaPath: string;
@@ -230,7 +238,7 @@ export class KnowledgeBaseDTO {
   }
 }
 
-export interface RagConfigInit {
+interface RagConfigInit {
   embeddingBackend: string;
   embeddingModel: string;
   embeddingApiBase: string;

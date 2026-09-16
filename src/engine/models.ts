@@ -21,7 +21,7 @@ function nowIso(): string {
 // ConversationMessage
 // ---------------------------------------------------------------------------
 
-export interface ConversationMessageInit {
+interface ConversationMessageInit {
   id?: string;
   conversationId?: string;
   turnId?: string;
@@ -188,7 +188,7 @@ function stableStringify(value: unknown): string {
 // Stream events (runtime → UI)
 // ---------------------------------------------------------------------------
 
-export interface StreamEventInit {
+interface StreamEventInit {
   type: string;
   conversationId?: string;
   turnId?: string;

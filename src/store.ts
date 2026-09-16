@@ -58,7 +58,7 @@ CREATE INDEX IF NOT EXISTS idx_tools_conv ON tool_executions(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_memory_conv ON memory_artifacts(conversation_id);
 `;
 
-export const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 1;
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -88,7 +88,7 @@ export interface MessageRow {
   created_at: string;
 }
 
-export interface MessageLike {
+interface MessageLike {
   id?: string;
   turn_id?: string;
   role?: string;
@@ -180,12 +180,19 @@ export class Store {
     reasoning: string | null = null,
   ): string {
     const mid = uid();
-    this.conn
-      .query(
-        "INSERT INTO messages (id, conversation_id, turn_id, role, content, tool_name, reasoning, created_at) " +
-          "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      )
-      .run(mid, conversationId, turnId, role, content, toolName, reasoning, nowIso());
+    const at = nowIso();
+    const tx = this.conn.transaction(() => {
+      this.conn
+        .query(
+          "INSERT INTO messages (id, conversation_id, turn_id, role, content, tool_name, reasoning, created_at) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(mid, conversationId, turnId, role, content, toolName, reasoning, at);
+      // Keep the parent ordering fresh even when the turn later fails or
+      // produces no assistant output (listConversations sorts by updated_at).
+      this.conn.query("UPDATE conversations SET updated_at=? WHERE id=?").run(at, conversationId);
+    });
+    tx();
     return mid;
   }
 

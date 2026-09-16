@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import * as paths from "@/paths";
 
-export const DEFAULT_SKILLSHUB_URL = "https://www.skillhub.club";
+const DEFAULT_SKILLSHUB_URL = "https://www.skillhub.club";
 
 export interface SkillHubSearchResult {
   name: string;
@@ -35,7 +35,7 @@ function fetcher(options: SkillHubOptions = {}): FetchLike {
   return options.fetchImpl ?? fetch;
 }
 
-export function skillHubBaseUrl(): string {
+function skillHubBaseUrl(): string {
   const raw = process.env.SARMA_SKILLSHUB_URL || DEFAULT_SKILLSHUB_URL;
   return raw.trim().replace(/\/+$/, "");
 }
@@ -166,7 +166,7 @@ function skillMarkdownFromPayload(payload: unknown): string {
   return stringField(record, ["skill_md", "skillMd", "content", "markdown", "body", "readme"]);
 }
 
-export async function downloadSkillFromHub(
+async function downloadSkillFromHub(
   name: string,
   options: SkillHubOptions = {},
 ): Promise<string> {

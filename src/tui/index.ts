@@ -11,7 +11,7 @@ import { debugLog } from "@/debug";
 import { printInfo } from "@/cli/renderer";
 import pc from "picocolors";
 
-export interface RawCtrlCExitHandler {
+interface RawCtrlCExitHandler {
   handleInput: (sequence: string) => boolean;
   dispose: () => void;
 }
@@ -105,7 +105,10 @@ export async function runTui(config: CliConfig, workflow?: string, resumeSession
       const workflowNames = listWorkflowMetas().map((w) => w.name);
       const nextController = createController(config, workflowNames);
       controller = nextController;
-      if (workflow && workflowNames.includes(workflow)) nextController.setWorkflow(workflow);
+      if (workflow) {
+        if (workflowNames.includes(workflow)) nextController.setWorkflow(workflow);
+        else nextController.note(`unknown workflow: ${workflow}. available: ${workflowNames.join(", ")}`);
+      }
       if (resumeSessionId) {
         if (!nextController.resumeSession(resumeSessionId)) {
           nextController.note(`session ${resumeSessionId} not found`);

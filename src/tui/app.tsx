@@ -10,7 +10,7 @@
  *   └ prompt input ─────────────────────────────┘
  */
 
-import { For, Show, Switch, Match, createSignal, onMount, onCleanup, type Accessor } from "solid-js";
+import { For, Show, Switch, Match, createEffect, createMemo, createSignal, onMount, onCleanup, type Accessor } from "solid-js";
 import { useKeyboard, useRenderer, useSelectionHandler, useTerminalDimensions } from "@opentui/solid";
 import "opentui-spinner/solid";
 
@@ -26,7 +26,7 @@ import { appendInputHistory, loadInputHistory } from "@/tui/inputHistory";
 import { WorkflowPicker } from "@/tui/workflowPicker";
 import { GraphPanel } from "@/tui/graphPanel";
 
-export interface TuiKeyEventLike {
+interface TuiKeyEventLike {
   name?: string;
   ctrl?: boolean;
   sequence?: string;
@@ -42,7 +42,7 @@ export function isCtrlCKey(key: TuiKeyEventLike): boolean {
   return (Boolean(key.ctrl) && name === "c") || key.sequence === "\u0003" || key.raw === "\u0003";
 }
 
-export function isEscapeKey(key: TuiKeyEventLike): boolean {
+function isEscapeKey(key: TuiKeyEventLike): boolean {
   const name = (key.name ?? "").toLowerCase();
   return name === "escape" || key.sequence === "\u001b" || key.raw === "\u001b";
 }
@@ -376,9 +376,11 @@ function SubagentDetailPanel(props: {
 
   useKeyboard((key) => {
     if (!s()) return;
+    // Modal overlay: consume every key so nothing types into (or submits
+    // from) the always-focused chat input behind this panel.
+    key.preventDefault();
+    key.stopPropagation();
     if (key.name === "escape") {
-      key.preventDefault();
-      key.stopPropagation();
       props.onClose();
     }
   });
@@ -562,21 +564,38 @@ function TranscriptView(props: {
   onFocusInput: () => void;
   onOpenSubagent: (id: string) => void;
 }) {
+  // Precompute lookup maps once per items change. Scanning the full array
+  // inside each item's reactive expression made every push O(n²) overall.
+  const subagentByCallId = createMemo(() => {
+    const map = new Map<string, SubagentEntry>();
+    for (const item of props.items) {
+      if (item.kind === "subagent" && item.subagent.toolCallId) {
+        if (!map.has(item.subagent.toolCallId)) map.set(item.subagent.toolCallId, item.subagent);
+      }
+    }
+    return map;
+  });
+  const mergedSubagentCallIds = createMemo(() => {
+    const merged = new Set<string>();
+    for (const item of props.items) {
+      if (
+        item.kind === "tool" &&
+        (item.tool.name === "delegate_task" || item.tool.name === "task") &&
+        item.tool.toolCallId
+      ) {
+        merged.add(item.tool.toolCallId);
+      }
+    }
+    return merged;
+  });
   const pairedSubagentForTool = (tool: Extract<TranscriptItem, { kind: "tool" }>) => {
     const callId = tool.tool.toolCallId;
     if (!callId) return undefined;
-    return props.items.flatMap((item) => (
-      item.kind === "subagent" && item.subagent.toolCallId === callId ? [item.subagent] : []
-    ))[0];
+    return subagentByCallId().get(callId);
   };
   const isMergedSubagent = (item: TranscriptItem) => {
     if (item.kind !== "subagent" || !item.subagent.toolCallId) return false;
-    return props.items.some(
-      (candidate) =>
-        candidate.kind === "tool" &&
-        candidate.tool.toolCallId === item.subagent.toolCallId &&
-        (candidate.tool.name === "delegate_task" || candidate.tool.name === "task"),
-    );
+    return mergedSubagentCallIds().has(item.subagent.toolCallId);
   };
   return (
     <scrollbox
@@ -651,7 +670,9 @@ function TranscriptView(props: {
             {GLYPH.assistant}{" "}
           </text>
           <box flexGrow={1}>
-            <MarkdownBody content={props.draft()} streaming />
+            {/* Plain text while streaming: re-lexing the full message per
+                chunk made rendering O(n²). Committed messages get markdown. */}
+            <text fg={theme.text} selectable>{props.draft()}</text>
           </box>
         </box>
       </Show>
@@ -835,14 +856,14 @@ const SARMA_SPLASH_ART = [
   "╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝",
 ];
 
-export interface AppProps {
+interface AppProps {
   controller: Controller;
   onExit: () => void;
   startupAnimation?: boolean | { durationMs?: number };
   mountInitialization?: boolean;
 }
 
-export function StartupSplash(props: { durationMs?: number; onDone?: () => void; label?: string }) {
+function StartupSplash(props: { durationMs?: number; onDone?: () => void; label?: string }) {
   const dims = useTerminalDimensions();
   const [frame, setFrame] = createSignal(0);
   let interval: ReturnType<typeof setInterval> | undefined;
@@ -945,6 +966,7 @@ export function App(props: AppProps) {
   const [cancelArmed, setCancelArmed] = createSignal(false);
   let exitTimer: ReturnType<typeof setTimeout> | undefined;
   let cancelTimer: ReturnType<typeof setTimeout> | undefined;
+  let lastStopHintAt: number | undefined;
   let inputRef: FocusableInputRef | undefined;
   let historyIndex: number | undefined;
   let historyDraft = "";
@@ -974,9 +996,16 @@ export function App(props: AppProps) {
       return;
     }
     setCancelArmed(true);
-    c.note("Press Esc again to stop the current workflow.");
+    // One hint per arm window — mashing Esc must not flood the transcript.
+    if (lastStopHintAt === undefined || Date.now() - lastStopHintAt > 1000) {
+      c.note("Press Esc again to stop the current workflow.");
+      lastStopHintAt = Date.now();
+    }
     if (cancelTimer) clearTimeout(cancelTimer);
-    cancelTimer = setTimeout(() => setCancelArmed(false), 1000);
+    cancelTimer = setTimeout(() => {
+      setCancelArmed(false);
+      lastStopHintAt = undefined;
+    }, 1000);
   };
 
   const rawEscStopHandler = (sequence: string): boolean => {
@@ -1019,6 +1048,18 @@ export function App(props: AppProps) {
     c.ragOpen() ||
     c.workflowPickerOpen() ||
     c.graphOpen();
+
+  // Closing an overlay that contained a focused input leaves the renderer
+  // with no focused renderable at all (unmount blurs without restore).
+  // Refocus the chat input whenever every overlay has closed.
+  createEffect(() => {
+    const open = overlaysOpen();
+    if (!open) {
+      queueMicrotask(() => {
+        if (!overlaysOpen() && !startupVisible()) focusInput();
+      });
+    }
+  });
 
   const selectedSubagent = () => {
     const id = selectedSubagentId();
@@ -1269,6 +1310,9 @@ export function App(props: AppProps) {
             value={input()}
             onInput={handleInput}
             onSubmit={onSubmit}
+            // OpenTUI's Input clamps to maxLength=1000 by default, silently
+            // truncating long pastes (prompts, logs, code blocks).
+            maxLength={100_000}
             backgroundColor={theme.backgroundPanel}
             focusedBackgroundColor={theme.backgroundPanel}
             placeholder="Ask Sarma to audit..."

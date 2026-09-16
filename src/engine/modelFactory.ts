@@ -7,7 +7,7 @@ import { ProviderNotConfiguredError } from "@/engine/errors";
 import type { ResolvedSkill } from "@/engine/models";
 import type { ModelProviderDTO } from "@/engine/dto";
 
-export interface ModelBuildParams {
+interface ModelBuildParams {
   modelName: string;
   apiKey: string;
   baseUrl: string;
@@ -34,7 +34,7 @@ function buildOpenAiModel(params: ModelBuildParams): BaseChatModel {
     model: params.modelName,
     temperature: params.temperature,
     topP: params.topP,
-    ...(params.apiKey ? { apiKey: params.apiKey } : {}),
+    apiKey: resolveApiKey(params, "not-needed"),
     ...(Object.keys(config).length ? { configuration: config } : {}),
   });
 }
@@ -47,7 +47,7 @@ function buildOpenAiResponsesModel(params: ModelBuildParams): BaseChatModel {
     temperature: params.temperature,
     topP: params.topP,
     useResponsesApi: true,
-    ...(params.apiKey ? { apiKey: params.apiKey } : {}),
+    apiKey: resolveApiKey(params, "not-needed"),
     ...(Object.keys(config).length ? { configuration: config } : {}),
   });
 }
@@ -57,9 +57,21 @@ function buildAnthropicModel(params: ModelBuildParams): BaseChatModel {
     model: params.modelName,
     temperature: params.temperature,
     topP: params.topP,
-    ...(params.apiKey ? { apiKey: params.apiKey } : {}),
+    apiKey: resolveApiKey(params, "not-needed"),
     ...(params.baseUrl ? { anthropicApiUrl: params.baseUrl } : {}),
   });
+}
+
+/**
+ * The openai/anthropic SDK clients refuse to construct without an apiKey even
+ * when a custom baseURL points at a local endpoint (Ollama/vLLM/llama.cpp)
+ * that ignores auth. Pass a placeholder in that case; omit the key entirely
+ * only when neither is configured so the SDK's own env lookup still applies.
+ */
+function resolveApiKey(params: ModelBuildParams, placeholder: string): string | undefined {
+  if (params.apiKey) return params.apiKey;
+  if (params.baseUrl) return placeholder;
+  return undefined;
 }
 
 const MODEL_BUILDERS: Record<string, (p: ModelBuildParams) => BaseChatModel> = {

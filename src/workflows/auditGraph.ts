@@ -33,24 +33,23 @@ import type { TokenEstimator } from "@/context/tokenizer";
 import { filterToolsByMcpServers, filterToolsByPrefixes, filterToolsBySkill } from "@/runtime/toolPolicy";
 import type { PersistentTerminalManager } from "@/resources/terminalTools";
 
-export const DEFAULT_MAX_GAPFILL = 3;
-export const DEFAULT_MAX_FEEDBACK = 2;
-export const DEFAULT_ROUTE_TIMEOUT = 30_000; // ms
+const DEFAULT_MAX_GAPFILL = 3;
+const DEFAULT_MAX_FEEDBACK = 2;
+const DEFAULT_ROUTE_TIMEOUT = 30_000; // ms
 /** Per-subagent react-loop step cap (the outer run's budget is much larger). */
-export const SUBAGENT_RECURSION_LIMIT = 100;
+const SUBAGENT_RECURSION_LIMIT = 100;
 
-export const ROUTE_ROUTER_PROMPT =
+const ROUTE_ROUTER_PROMPT =
   "You are Sarma's audit workflow router. Read the completed stage output " +
   "and choose the next workflow node from the allowed options. Return only " +
   "the structured response requested by the caller. Do not summarize the " +
   "audit and do not invent findings.";
 
 /** Structured routing decision returned by a lightweight router agent. */
-export const RouteDecision = z.object({
+const RouteDecision = z.object({
   next: z.string().describe("Next workflow node name."),
   reason: z.string().default("").describe("Brief reason for the route."),
 });
-export type RouteDecisionType = z.infer<typeof RouteDecision>;
 
 /** State flowing through the audit pipeline. */
 export const AuditState = Annotation.Root({
@@ -516,7 +515,7 @@ async function routeOrFallback(
   }
 }
 
-export interface BuildAuditGraphOptions {
+interface BuildAuditGraphOptions {
   systemPrompt?: string;
   subagentSpecs?: SubagentSpec[];
   subagentModels?: Record<string, BaseChatModel> | null;

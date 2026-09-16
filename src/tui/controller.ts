@@ -96,14 +96,14 @@ export interface ConfigModelRow {
   active: boolean;
 }
 
-export interface ConfigAgentRow {
+interface ConfigAgentRow {
   name: string;
   model: string;
   mcp: string;
   skills: string;
 }
 
-export interface ConfigWorkflowRow {
+interface ConfigWorkflowRow {
   name: string;
   agentCount: number;
   current: boolean;
@@ -126,7 +126,7 @@ export interface WorkflowGraphNode {
   detail: string;
 }
 
-export interface WorkflowGraphView {
+interface WorkflowGraphView {
   workflow: string;
   description: string;
   currentStage: string;
@@ -136,19 +136,19 @@ export interface WorkflowGraphView {
   nodes: WorkflowGraphNode[];
 }
 
-export interface PluginMcpRow {
+interface PluginMcpRow {
   name: string;
   transport: string;
   target: string;
   enabled: boolean;
 }
 
-export interface PluginSkillRow {
+interface PluginSkillRow {
   name: string;
   enabled: boolean;
 }
 
-export interface PluginSkillSearchRow {
+interface PluginSkillSearchRow {
   name: string;
   description: string;
   installed: boolean;
@@ -167,7 +167,7 @@ export interface PluginMcpDraft {
   scope: string;
 }
 
-export interface PluginSkillDraft {
+interface PluginSkillDraft {
   mode: string;
   name: string;
   path: string;
@@ -186,7 +186,7 @@ export interface RagModelDraft {
   chunkOverlap: string;
 }
 
-export interface RagKnowledgeBaseRow {
+interface RagKnowledgeBaseRow {
   name: string;
   backend: string;
   target: string;
@@ -222,12 +222,12 @@ export const API_MODE_LABELS: Record<string, string> = {
 
 /** Which pane of the config dialog is showing. */
 export type ConfigSection = "models" | "workflow";
-export type ConfigStep = "browse" | "model-fields" | "agent-fields";
-export type ConfigWorkflowPane = "workflows" | "agents";
+type ConfigStep = "browse" | "model-fields" | "agent-fields";
+type ConfigWorkflowPane = "workflows" | "agents";
 export type PluginSection = "mcp" | "skills";
-export type PluginStep = "browse" | "mcp-fields" | "skill-fields";
+type PluginStep = "browse" | "mcp-fields" | "skill-fields";
 export type RagSection = "model" | "knowledge" | "search";
-export type RagStep = "browse" | "model-fields" | "kb-fields" | "search-fields";
+type RagStep = "browse" | "model-fields" | "kb-fields" | "search-fields";
 
 // Stage panels are derived from the real subagent node names so the side panel
 // matches what the graph actually runs. Hardcoding a guessed list (e.g.

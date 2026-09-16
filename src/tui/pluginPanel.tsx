@@ -113,48 +113,40 @@ function BrowseView(props: { controller: Controller; setStatus: (text: string) =
 
   useKeyboard((key: KeyEvent) => {
     if (!c.pluginOpen() || c.pluginStep() !== "browse") return;
+    // Modal overlay: consume every key so nothing types into (or submits
+    // from) the always-focused chat input behind this panel.
+    consumeKey(key);
     if (key.name === "escape") {
-      consumeKey(key);
       return c.closePlugin();
     }
     if (key.name === "left") {
-      consumeKey(key);
       return c.setPluginSection("mcp");
     }
     if (key.name === "right") {
-      consumeKey(key);
       return c.setPluginSection("skills");
     }
     if (key.sequence === "m") {
-      consumeKey(key);
       return c.setPluginSection("mcp");
     }
     if (key.sequence === "s") {
-      consumeKey(key);
       return c.setPluginSection("skills");
     }
     if (key.name === "up") {
-      consumeKey(key);
       return c.movePluginSelection(-1);
     }
     if (key.name === "down") {
-      consumeKey(key);
       return c.movePluginSelection(1);
     }
     if (key.sequence === "n" && c.pluginSection() === "mcp") {
-      consumeKey(key);
       return c.newPluginMcp();
     }
     if (key.sequence === "n" && c.pluginSection() === "skills") {
-      consumeKey(key);
       return c.newPluginSkill();
     }
     if (key.sequence === "e" && c.pluginSection() === "mcp") {
-      consumeKey(key);
       return c.editPluginMcp();
     }
     if (key.name === "return" || key.name === "enter" || key.name === "space") {
-      consumeKey(key);
       return void toggle();
     }
   });

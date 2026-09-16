@@ -20,7 +20,7 @@ import {
 } from "@/resources/rag";
 import { printError, printInfo } from "@/cli/renderer";
 
-export interface RagCommandArgs {
+interface RagCommandArgs {
   embeddingModel?: string;
   embeddingBackend?: "huggingface" | "api";
   apiBase?: string;

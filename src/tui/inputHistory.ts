@@ -1,11 +1,12 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 
 import { inputHistoryFile } from "@/paths";
 
 const DEFAULT_LIMIT = 1000;
+const MAX_ENTRY_CHARS = 4000;
 
-export interface InputHistoryOptions {
+interface InputHistoryOptions {
   file?: string;
   limit?: number;
 }
@@ -19,7 +20,15 @@ function limitFrom(options: InputHistoryOptions = {}): number {
 }
 
 function normalizeLine(text: string): string {
-  return text.replace(/\r?\n/g, " ").trim();
+  // Cap single entries so one giant paste cannot balloon the history file.
+  return text.replace(/\r?\n/g, " ").trim().slice(0, MAX_ENTRY_CHARS);
+}
+
+function atomicWrite(file: string, content: string): void {
+  mkdirSync(dirname(file), { recursive: true });
+  const tmp = join(dirname(file), `.${basename(file)}.${Math.random().toString(36).slice(2)}.tmp`);
+  writeFileSync(tmp, content, "utf8");
+  renameSync(tmp, file);
 }
 
 export function loadInputHistory(options: InputHistoryOptions = {}): string[] {
@@ -32,7 +41,9 @@ export function loadInputHistory(options: InputHistoryOptions = {}): string[] {
     return lines.slice(-limitFrom(options));
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw err;
+    // Unreadable history (permissions, directory, corruption) must never
+    // abort TUI boot — degrade to an empty history instead.
+    return [];
   }
 }
 
@@ -41,12 +52,17 @@ export function appendInputHistory(text: string, options: InputHistoryOptions = 
   if (!entry) return loadInputHistory(options);
 
   const limit = limitFrom(options);
-  const file = pathFrom(options);
   const entries = loadInputHistory({ ...options, limit });
-  if (entries.at(-1) !== entry) entries.push(entry);
-  const trimmed = entries.slice(-limit);
+  // Re-submitting an older entry moves it to the end (shell-history
+  // semantics) rather than duplicating it.
+  const withoutEntry = entries.filter((existing) => existing !== entry);
+  withoutEntry.push(entry);
+  const trimmed = withoutEntry.slice(-limit);
 
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, `${trimmed.join("\n")}${trimmed.length ? "\n" : ""}`, "utf8");
+  try {
+    atomicWrite(pathFrom(options), `${trimmed.join("\n")}${trimmed.length ? "\n" : ""}`);
+  } catch {
+    // History persistence is best-effort; losing it must not break submit.
+  }
   return trimmed;
 }

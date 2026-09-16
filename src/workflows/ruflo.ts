@@ -19,7 +19,7 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { buildAgentMiddlewareForModel } from "@/runtime/middleware";
 import type { PersistentTerminalManager } from "@/resources/terminalTools";
 
-export const SUBAGENT_RESULT_TEMPLATE = `Return only this result template. Do not include hidden chain-of-thought,
+const SUBAGENT_RESULT_TEMPLATE = `Return only this result template. Do not include hidden chain-of-thought,
 private reasoning, or a full transcript.
 
 Result:

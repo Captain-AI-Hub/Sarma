@@ -15,7 +15,7 @@ import { listAvailableSkills } from "@/resources/skills";
 import { knowledgeBaseChromaPath } from "@/resources/rag";
 import { debugEnabled, debugLog, debugLogFile, setDebugEnabled } from "@/debug";
 
-export interface ReportsDeps {
+interface ReportsDeps {
   config: CliConfig;
   /** Getter, not a value: the controller rebuilds the resolver on config save. */
   resolver: () => RuntimePolicyResolver;
@@ -28,7 +28,7 @@ export interface ReportsDeps {
   bumpMcpStatusVersion: () => void;
 }
 
-export function boolStatus(value: boolean): string {
+function boolStatus(value: boolean): string {
   return value ? "enabled" : "disabled";
 }
 

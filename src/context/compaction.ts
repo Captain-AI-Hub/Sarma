@@ -7,11 +7,11 @@
  */
 
 import { ConversationMessage } from "@/engine/models";
-import type { TokenEstimator } from "@/context/tokenizer";
+import { fallbackEstimate, type TokenEstimator } from "@/context/tokenizer";
 
 type Summarizer = (messages: ConversationMessage[]) => Promise<string>;
 
-export interface ContextWindowPolicyInit {
+interface ContextWindowPolicyInit {
   maxContextTokens: number;
   triggerRatio?: number;
   rawTailRatio?: number;
@@ -48,7 +48,12 @@ export class ContextWindowPolicy {
     return Math.max(Math.trunc(this.budget * this.triggerRatio), 1);
   }
   get rawTailTokens(): number {
-    return Math.max(Math.trunc(this.budget * this.rawTailRatio), 1);
+    // The tail budget competes with fixed overhead (system prompt + tool
+    // reserve + output reserve) inside the same window; sizing it against the
+    // full budget makes small-context providers re-compact every turn because
+    // overhead + tail alone exceeds the trigger.
+    const available = Math.max(1, this.budget - this.fixedOverheadTokens);
+    return Math.max(Math.trunc(available * this.rawTailRatio), 1);
   }
   get outputReserveTokens(): number {
     const ratioReserve = Math.trunc(this.budget * this.outputReserveRatio);
@@ -116,11 +121,19 @@ export class ContextCompactor {
     const memory = (await summarize(plan.older)).trim();
     if (!memory) return [false, history, ""];
 
+    // The memory message must sort before every kept tail message in the DB
+    // (loadMessages orders by created_at): defaulting to now would move it to
+    // the end of history on reload and diverge from the live order.
+    const earliestTailAt = plan.keepTail.reduce<string | null>(
+      (earliest, m) => (earliest === null || m.createdAt < earliest ? m.createdAt : earliest),
+      null,
+    );
     const memoryMessage = new ConversationMessage({
       conversationId: options.conversationId ?? "",
       turnId: "compact",
       role: "system",
       content: buildMemoryContextMessage(memory),
+      createdAt: earliestTailAt !== null ? new Date(new Date(earliestTailAt).getTime() - 1).toISOString() : undefined,
     });
     return [true, [memoryMessage, ...plan.keepTail], memory];
   }
@@ -163,9 +176,9 @@ export class ContextCompactor {
   }
 
   static estimateTextTokens(text: string): number {
-    // Provider-neutral fallback. Exact provider tokenizers can be added behind
-    // this interface without changing Session.
-    return Math.max(0, Math.floor((text || "").length / 4));
+    // Provider-neutral fallback, shared with tokenizer.fallbackEstimate so
+    // every code path estimates identically.
+    return fallbackEstimate(text);
   }
 }
 

@@ -31,7 +31,7 @@ type StreamableAgent = {
   stream?: (...args: unknown[]) => MaybePromise<AsyncIterable<unknown>>;
 };
 
-export interface AgentRunnerOptions {
+interface AgentRunnerOptions {
   factory: AgentFactory;
   pool: McpClientPool;
   provider: ModelProviderDTO;

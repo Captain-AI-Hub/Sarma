@@ -4,9 +4,9 @@
  * same StreamEvents to a scrolling log; this builds an in-memory tree instead.
  */
 
-export type ChatRole = "user" | "assistant";
+type ChatRole = "user" | "assistant";
 
-export interface ToolEntry {
+interface ToolEntry {
   id: string;
   toolCallId: string;
   name: string;
@@ -32,7 +32,7 @@ export interface SubagentEntry {
   error: string;
 }
 
-export interface StageEntry {
+interface StageEntry {
   id: string;
   name: string;
   nodeKind: "stage" | "router";

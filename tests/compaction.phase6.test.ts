@@ -17,13 +17,21 @@ describe("ContextWindowPolicy", () => {
     const p = new ContextWindowPolicy({ maxContextTokens: 100_000, triggerRatio: 0.9, rawTailRatio: 0.5 });
     expect(p.budget).toBe(100_000);
     expect(p.triggerTokens).toBe(90_000);
-    expect(p.rawTailTokens).toBe(50_000);
+    // The tail budget is sized against the window minus fixed overhead
+    // (static prompt + output reserve) so overhead + tail fits the trigger.
+    expect(p.rawTailTokens).toBe(44_000);
     expect(p.outputReserveTokens).toBe(12_000);
   });
 
   test("output reserve respects minimum", () => {
     const p = new ContextWindowPolicy({ maxContextTokens: 1_000 });
     expect(p.outputReserveTokens).toBe(2_048);
+  });
+
+  test("tail budget stays positive when overhead dominates small windows", () => {
+    const p = new ContextWindowPolicy({ maxContextTokens: 4_000, staticPromptTokens: 3_800 });
+    expect(p.fixedOverheadTokens).toBeGreaterThan(p.budget * 0.5);
+    expect(p.rawTailTokens).toBeGreaterThanOrEqual(1);
   });
 });
 

@@ -18,7 +18,7 @@ export function debugLogFile(): string {
   return process.env.SARMA_DEBUG_LOG || join(paths.localDir(), "debug.log");
 }
 
-export function formatError(error: unknown): string {
+function formatError(error: unknown): string {
   if (error instanceof Error) return error.stack || error.message;
   return String(error);
 }

@@ -254,6 +254,7 @@ export class Session {
     const turnId = uid();
     const runPlan = this.resolver.resolve(mode);
     const toolExecutionIds = new Map<string, string>();
+    let turnFailed = false;
     const abortController = new AbortController();
     this.currentRunAbort = abortController;
 
@@ -379,14 +380,20 @@ export class Session {
       // seeds full history onto a fresh thread instead of merging with the
       // poisoned one.
       this.checkpointEpoch += 1;
+      turnFailed = true;
       yield makeRunFailedEvent(this._conversationId, turnId, message);
     } finally {
-      // Cancelled or failed runs drop the turn-local correlation map; close
-      // out any still-'started' tool rows so the DB has no eternal pending
-      // executions.
+      // Close out any still-'started' tool rows so the DB has no eternal
+      // pending executions. On failed/cancelled turns that is a cancellation;
+      // on completed turns a leftover row means its result event was not
+      // correlated — record that rather than mislabeling a successful tool.
       for (const id of toolExecutionIds.values()) {
         try {
-          this.store.finishToolExecution(id, "cancelled", null, "Run cancelled.");
+          if (turnFailed) {
+            this.store.finishToolExecution(id, "cancelled", null, "Run cancelled.");
+          } else {
+            this.store.finishToolExecution(id, "succeeded", "result event not correlated", null);
+          }
         } catch {
           /* best-effort reconcile */
         }

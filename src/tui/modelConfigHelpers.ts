@@ -13,7 +13,7 @@ interface ModelDraftLike {
   enabled: string;
 }
 
-export interface ProviderDraftResult {
+interface ProviderDraftResult {
   provider: ProviderConfig | null;
   error: string | null;
   name: string;

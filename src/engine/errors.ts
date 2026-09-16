@@ -1,7 +1,7 @@
 /** Runtime exceptions and error types. */
 
 /** Base exception for Sarma runtime failures. */
-export class SarmaRuntimeError extends Error {
+class SarmaRuntimeError extends Error {
   constructor(message = "") {
     super(message);
     this.name = new.target.name;
@@ -22,6 +22,9 @@ export class McpConnectionError extends SarmaRuntimeError {
     this.serverName = serverName;
   }
 }
+
+/** MCP server configuration is structurally invalid (missing url, bad JSON). */
+export class McpValidationError extends SarmaRuntimeError {}
 
 /** Failed to construct the LangGraph agent. */
 export class AgentBuildError extends SarmaRuntimeError {}

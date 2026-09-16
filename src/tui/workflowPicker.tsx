@@ -35,25 +35,23 @@ export function WorkflowPicker(props: { controller: Controller }) {
 
   useKeyboard((key: KeyEvent) => {
     if (!c.workflowPickerOpen()) return;
+    // Modal overlay: consume every key so nothing types into (or submits
+    // from) the always-focused chat input behind this panel.
+    consumeKey(key);
     if (key.name === "escape") {
-      consumeKey(key);
       return c.closeWorkflowPicker();
     }
     if (key.name === "up") {
-      consumeKey(key);
       return c.moveWorkflowPickerSelection(-1);
     }
     if (key.name === "down") {
-      consumeKey(key);
       return c.moveWorkflowPickerSelection(1);
     }
     if (key.sequence === "g") {
-      consumeKey(key);
       c.closeWorkflowPicker();
       return c.openGraph();
     }
     if (key.name === "return" || key.name === "enter") {
-      consumeKey(key);
       return activate();
     }
   });

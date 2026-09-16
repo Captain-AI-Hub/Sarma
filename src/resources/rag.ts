@@ -19,7 +19,7 @@ import { z } from "zod";
 
 import * as paths from "@/paths";
 
-export interface KnowledgeBaseSettings {
+interface KnowledgeBaseSettings {
   name: string;
   docsPath: string;
   chromaPath: string;
@@ -32,7 +32,7 @@ export interface KnowledgeBaseSettings {
   enabled: boolean;
 }
 
-export interface RagSettings {
+interface RagSettings {
   embeddingBackend: string;
   embeddingModel: string;
   embeddingApiBase: string;
@@ -143,7 +143,7 @@ export async function chunkKnowledgeBase(
 }
 
 /** Build the configured embedding model, or null when none is usable. */
-export function buildEmbeddingModel(rag: RagSettings): EmbeddingModel | null {
+function buildEmbeddingModel(rag: RagSettings): EmbeddingModel | null {
   const backend = rag.embeddingBackend.trim().toLowerCase() || "huggingface";
   const modelName = embeddingModelName(rag);
   if (!modelName) return null;
@@ -252,11 +252,11 @@ export function validateChromaDatabase(path: string): ChunkDatabaseInfo {
 
 // -- path helpers --
 
-export function knowledgeBaseDocsDir(name: string): string {
+function knowledgeBaseDocsDir(name: string): string {
   return join(paths.ragDocsDir(), safeName(name));
 }
 
-export function knowledgeBaseDocsPath(kb: KnowledgeBaseSettings): string {
+function knowledgeBaseDocsPath(kb: KnowledgeBaseSettings): string {
   if (kb.docsPath.trim()) return expandUser(kb.docsPath);
   return knowledgeBaseDocsDir(kb.name);
 }
@@ -275,7 +275,7 @@ export function isChromaDatabase(path: string): boolean {
   );
 }
 
-export function embeddingModelLocalPath(rag: RagSettings): string {
+function embeddingModelLocalPath(rag: RagSettings): string {
   if (rag.embeddingLocalPath.trim()) return expandUser(rag.embeddingLocalPath);
   return join(paths.ragModelsDir(), safeName(rag.embeddingModel));
 }

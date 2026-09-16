@@ -39,8 +39,8 @@ import type { TokenEstimator } from "@/context/tokenizer";
 import type { PersistentTerminalManager } from "@/resources/terminalTools";
 
 /** Bounds for the two analysis loops (surface coverage, review rework). */
-export const DEFAULT_MAX_MAPFILL = 3;
-export const DEFAULT_MAX_REVIEW = 2;
+const DEFAULT_MAX_MAPFILL = 3;
+const DEFAULT_MAX_REVIEW = 2;
 
 function writeAnalysisEvent(data: Record<string, unknown>): void {
   let writer: ((chunk: unknown) => void) | undefined;
@@ -129,7 +129,7 @@ async function routeOrFallback(
   }
 }
 
-export interface BuildAnalysisGraphOptions {
+interface BuildAnalysisGraphOptions {
   systemPrompt?: string;
   subagentSpecs?: SubagentSpec[];
   subagentModels?: Record<string, BaseChatModel> | null;

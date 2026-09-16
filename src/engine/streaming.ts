@@ -26,7 +26,7 @@ import { AUDIT_SLIM_SUBAGENT_ORDER } from "@/workflows/auditSlimSubagents";
 import { ANALYSIS_SUBAGENT_ORDER } from "@/workflows/analysisSubagents";
 
 /** Maximum characters retained from a tool result in streaming events. */
-export const MAX_TOOL_RESULT_CHARS = 2000;
+const MAX_TOOL_RESULT_CHARS = 2000;
 
 /** Conventional name for the top-level coordinator agent. */
 export const ORCHESTRATOR = "orchestrator";

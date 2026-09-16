@@ -108,7 +108,7 @@ describe("analysis workflow graph", () => {
       structuredRouting: false,
       subagentModels: analysisSubagentModels({
         surface: new Proxy([] as string[], {
-          get(target: string[], prop) {
+          get(_target: string[], prop) {
             if (prop === "length") return 50;
             surfacePasses += 1;
             return `surface pass ${surfacePasses}: coverage gap remains`;

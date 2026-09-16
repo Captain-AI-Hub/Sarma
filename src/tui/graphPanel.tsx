@@ -76,12 +76,13 @@ export function GraphPanel(props: { controller: Controller }) {
 
   useKeyboard((key: KeyEvent) => {
     if (!c.graphOpen()) return;
+    // Modal overlay: consume every key so nothing types into (or submits
+    // from) the always-focused chat input behind this panel.
+    consumeKey(key);
     if (key.name === "escape") {
-      consumeKey(key);
       return c.closeGraph();
     }
     if (key.sequence === "w") {
-      consumeKey(key);
       c.closeGraph();
       return c.openWorkflowPicker();
     }

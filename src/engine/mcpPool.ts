@@ -4,7 +4,7 @@ import { MultiServerMCPClient } from "@langchain/mcp-adapters";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { McpConnectionError } from "@/engine/errors";
 
-export const DEFAULT_MCP_CONNECT_TIMEOUT = 20_000; // ms
+const DEFAULT_MCP_CONNECT_TIMEOUT = 20_000; // ms
 
 /** Connection summary for one configured MCP server. */
 export interface McpServerStatus {

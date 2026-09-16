@@ -18,9 +18,8 @@ import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import * as paths from "@/paths";
 
 export const WILDCARD = "*";
-export const API_MODES = ["openai_compatible", "openai_responses", "anthropic"] as const;
-export const WORKFLOWS = ["ruflo", "audit", "audit-slim", "analysis"] as const;
-export const LEGACY_WORKFLOW_ALIASES: Record<string, string> = { chat: "ruflo" };
+const WORKFLOWS = ["ruflo", "audit", "audit-slim", "analysis"] as const;
+const LEGACY_WORKFLOW_ALIASES: Record<string, string> = { chat: "ruflo" };
 const CONTEXT_WINDOW_UNIT_EXPONENTS: Record<string, number> = {
   k: 1,
   kb: 1,
@@ -338,7 +337,7 @@ function ensureGlobalConfigSuite(): void {
 }
 
 /** Create local workspace directories without touching global config files. */
-export function ensureWorkspaceConfig(): void {
+function ensureWorkspaceConfig(): void {
   mkdirSync(paths.localDir(), { recursive: true });
   mkdirSync(paths.localSkillsDir(), { recursive: true });
   mkdirSync(paths.ragDocsDir(), { recursive: true });
@@ -659,7 +658,7 @@ export function saveMcpServers(servers: McpServerConfig[], scope = "local"): str
 }
 
 /** Persist a concrete RAG config to local or global scope. */
-export function saveRagConfig(rag: RagConfig, scope = "local"): string {
+function saveRagConfig(rag: RagConfig, scope = "local"): string {
   const isGlobal = resolveScope(scope) === "global";
   const header = ["# RAG knowledge base settings."];
   const data: Record<string, unknown> = {};

@@ -5,7 +5,7 @@
  * with muted stone greys for secondary text and borders.
  */
 
-export interface Theme {
+interface Theme {
   background: string;
   backgroundPanel: string;
   backgroundElement: string;

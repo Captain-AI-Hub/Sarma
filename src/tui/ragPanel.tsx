@@ -119,57 +119,47 @@ function BrowseView(props: { controller: Controller; setStatus: (text: string) =
 
   useKeyboard((key: KeyEvent) => {
     if (!c.ragOpen() || c.ragStep() !== "browse") return;
+    // Modal overlay: consume every key so nothing types into (or submits
+    // from) the always-focused chat input behind this panel.
+    consumeKey(key);
     if (key.name === "escape") {
-      consumeKey(key);
       return c.closeRag();
     }
     if (key.name === "left") {
-      consumeKey(key);
       return c.setRagSection(c.ragSection() === "search" ? "knowledge" : "model");
     }
     if (key.name === "right") {
-      consumeKey(key);
       return c.setRagSection(c.ragSection() === "model" ? "knowledge" : "search");
     }
     if (key.sequence === "m") {
-      consumeKey(key);
       return c.setRagSection("model");
     }
     if (key.sequence === "k") {
-      consumeKey(key);
       return c.setRagSection("knowledge");
     }
     if (key.sequence === "s") {
-      consumeKey(key);
       return c.setRagSection("search");
     }
     if (key.name === "up") {
-      consumeKey(key);
       return c.moveRagSelection(-1);
     }
     if (key.name === "down") {
-      consumeKey(key);
       return c.moveRagSelection(1);
     }
     if (key.sequence === "n" && c.ragSection() === "knowledge") {
-      consumeKey(key);
       return c.newRagKnowledgeBase();
     }
     if (key.sequence === "d" && c.ragSection() === "knowledge") {
-      consumeKey(key);
       return void run(c.deleteSelectedRagKnowledgeBase, "Knowledge base deleted.");
     }
     if (key.sequence === "c" && c.ragSection() === "knowledge") {
-      consumeKey(key);
       props.setStatus("Chunking knowledge base...");
       return void run(c.chunkSelectedRagKnowledgeBase, "Knowledge base chunked.");
     }
     if (key.name === "space" && c.ragSection() === "knowledge") {
-      consumeKey(key);
       return void run(c.toggleSelectedRagKnowledgeBase, "Knowledge base updated.");
     }
     if (key.name === "return" || key.name === "enter" || key.sequence === "e") {
-      consumeKey(key);
       if (c.ragSection() === "model") return c.editRagModelSettings();
       if (c.ragSection() === "knowledge") return c.editRagKnowledgeBase();
       return c.editRagSearch();

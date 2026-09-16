@@ -12,11 +12,11 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 const DIR_NAME = ".sarma";
-export const MODELS_NAME = "models.toml";
-export const AGENTS_NAME = "agents.toml";
-export const MCP_NAME = "mcp.toml";
-export const RAG_NAME = "rag.toml";
-export const INPUT_HISTORY_NAME = ".history";
+const MODELS_NAME = "models.toml";
+const AGENTS_NAME = "agents.toml";
+const MCP_NAME = "mcp.toml";
+const RAG_NAME = "rag.toml";
+const INPUT_HISTORY_NAME = ".history";
 
 /** Global config directory: `$SARMA_HOME` or `~/.sarma`. */
 export function globalDir(): string {
@@ -48,10 +48,10 @@ export function globalRagFile(): string {
 export function localRagFile(): string {
   return join(localDir(), RAG_NAME);
 }
-export function ragDir(): string {
+function ragDir(): string {
   return join(localDir(), "rag");
 }
-export function globalRagDir(): string {
+function globalRagDir(): string {
   return join(globalDir(), "rag");
 }
 export function ragDocsDir(): string {
