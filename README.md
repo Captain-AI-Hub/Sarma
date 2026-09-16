@@ -37,25 +37,7 @@ server.
 
 ## Install
 
-Sarma is published as the Bun CLI package `sarma-seek`. The installed command is
-`sarma`.
-
-Install with Bun:
-
-```bash
-bun add -g sarma-seek
-sarma
-```
-
-Or install with npm:
-
-```bash
-npm install -g sarma-seek
-sarma
-```
-
-The npm-installed command still runs on Bun because Sarma's executable uses
-`#!/usr/bin/env bun`. Make sure `bun` is available in `PATH`.
+Sarma is installed by building it locally. A checkout and Bun are required.
 
 ### Build A Standalone Binary
 
@@ -71,26 +53,7 @@ The version is baked in at build time. The binary supports the same commands
 as the source install, including the full-screen TUI, and ignores any
 `bunfig.toml` in the working directory.
 
-### Local Install Without Publishing
-
-Install the current checkout as a global `sarma` command (runs from source,
-so edits take effect immediately):
-
-```bash
-bun link
-sarma --version      # from any directory
-```
-
-Remove with `bun unlink`.
-
-Or pack and install the tarball exactly as npm would receive it:
-
-```bash
-npm pack                          # → sarma-seek-<version>.tgz
-npm install -g ./sarma-seek-0.2.0.tgz
-```
-
-## Install From Source
+### Install From Source
 
 Requires Bun.
 
