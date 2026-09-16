@@ -39,6 +39,28 @@ server.
 
 Sarma is installed by building it locally. A checkout and Bun are required.
 
+### One-Line Install
+
+Linux & macOS:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Captain-AI-Hub/Sarma/main/install.sh | sh
+```
+
+Windows (PowerShell):
+
+```powershell
+iex (irm https://raw.githubusercontent.com/Captain-AI-Hub/Sarma/main/install.ps1)
+```
+
+The script installs Bun if missing, downloads the latest tagged source
+(falling back to `main` when the tag predates the standalone build), compiles
+the binary, and puts `sarma` on your PATH (`~/.local/bin` on Linux/macOS,
+`%LOCALAPPDATA%\Sarma\bin` on Windows). Re-running the same command updates
+Sarma. Pin a version with `SARMA_VERSION=v0.2.0` (or pass it as the first
+argument to `install.sh`). Uninstall with `sh install.sh uninstall` (Windows:
+`$env:SARMA_UNINSTALL = '1'` before the one-liner).
+
 ### Build A Standalone Binary
 
 Compile a self-contained executable (no `node_modules`, no Bun install needed
