@@ -1,5 +1,5 @@
 import { ProviderConfig } from "@/config";
-import { parseContextSize } from "@/tui/controllerHelpers";
+import { parseBoolField, parseContextSize } from "@/tui/controllerHelpers";
 
 const API_MODES = ["openai_compatible", "openai_responses", "anthropic"];
 
@@ -59,5 +59,6 @@ export function providerFromModelDraft(
 }
 
 function parseBool(value: string): boolean {
-  return ["1", "true", "yes", "y", "on", "enabled"].includes(value.trim().toLowerCase());
+  // Model profiles: unrecognized input leaves the model disabled.
+  return parseBoolField(value, false);
 }

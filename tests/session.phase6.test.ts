@@ -69,10 +69,14 @@ describe("Session lifecycle", () => {
     expect(session.conversationId).toBe(cid);
   });
 
-  test("resumeConversation returns false for empty conversation", () => {
+  test("resumeConversation returns false only for missing conversations", () => {
     const session = new Session(loadConfig(), store);
+    // Existing-but-empty (first turn died before persisting) still resumes.
     const cid = store.createConversation();
-    expect(session.resumeConversation(cid)).toBe(false);
+    expect(session.resumeConversation(cid)).toBe(true);
+    expect(session.conversationId).toBe(cid);
+    // A conversation id that was never created does not.
+    expect(session.resumeConversation("no-such-conversation")).toBe(false);
   });
 
   test("graphState returns an independent snapshot", () => {

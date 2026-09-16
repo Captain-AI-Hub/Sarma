@@ -39,7 +39,7 @@ export interface PersistentTerminalManagerOptions {
   logRoot?: string;
 }
 
-export interface TerminalStartArgs {
+interface TerminalStartArgs {
   terminalId?: string;
   command: string;
   args?: string[];

@@ -43,7 +43,10 @@ export function debugLog(message: string, error?: unknown): void {
 export function installDebugHandlers(): void {
   if (!debugEnabled()) return;
   process.on("uncaughtException", (error) => {
+    // Log, then restore the default crash semantics: swallowing an
+    // uncaughtException leaves the process running in an undefined state.
     debugLog("uncaughtException", error);
+    process.exit(1);
   });
   process.on("unhandledRejection", (reason) => {
     debugLog("unhandledRejection", reason);

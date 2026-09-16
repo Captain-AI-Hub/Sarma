@@ -100,6 +100,16 @@ export async function runInteractive(config: CliConfig, workflow?: string): Prom
     }
   };
 
+  // Ctrl+C must not orphan MCP stdio children or skip SQLite cleanup; the
+  // clean-exit path above only runs on /exit or EOF.
+  let closing = false;
+  process.on("SIGINT", () => {
+    if (closing) return;
+    closing = true;
+    printInfo(pc.dim("\nInterrupted."));
+    void close().finally(() => process.exit(130));
+  });
+
   for await (const line of rl) {
     const text = line.trim();
     if (!text) {

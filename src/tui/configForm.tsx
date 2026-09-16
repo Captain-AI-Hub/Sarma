@@ -106,29 +106,65 @@ function BrowseView(props: { controller: Controller; setStatus: (text: string) =
     props.setStatus(err ? `Error: ${err}` : "Active model updated.");
   };
 
+  // Consume handled keys so they do not leak into the always-focused chat
+  // input behind the overlay.
+  const consumeKey = (key: unknown) => {
+    const k = key as { preventDefault?: () => void; stopPropagation?: () => void };
+    k.preventDefault?.();
+    k.stopPropagation?.();
+  };
+
   useKeyboard((key: { name?: string; ctrl?: boolean; sequence?: string }) => {
     if (!c.configOpen() || c.configStep() !== "browse") return;
-    if (key.name === "escape") return c.closeConfig();
+    if (key.name === "escape") {
+      consumeKey(key);
+      return c.closeConfig();
+    }
     if (key.name === "left") {
+      consumeKey(key);
       if (c.configSection() === "workflow" && agentPaneActive()) return c.setConfigWorkflowPane("workflows");
       return c.setConfigSection("models");
     }
     if (key.name === "right") {
+      consumeKey(key);
       if (c.configSection() === "workflow" && workflowPaneActive()) return c.setConfigWorkflowPane("agents");
       return c.setConfigSection("workflow");
     }
-    if (key.sequence === "m") return c.setConfigSection("models");
-    if (key.sequence === "w") return c.setConfigSection("workflow");
+    if (key.sequence === "m") {
+      consumeKey(key);
+      return c.setConfigSection("models");
+    }
+    if (key.sequence === "w") {
+      consumeKey(key);
+      return c.setConfigSection("workflow");
+    }
     if (key.name === "tab" && c.configSection() === "workflow") {
+      consumeKey(key);
       c.setConfigWorkflowPane(agentPaneActive() ? "workflows" : "agents");
       return;
     }
-    if (key.name === "up") return c.moveConfigSelection(-1);
-    if (key.name === "down") return c.moveConfigSelection(1);
-    if (key.sequence === "n" && c.configSection() === "models") return c.newConfigModel();
-    if (key.sequence === "d" && c.configSection() === "models") return void runDelete();
-    if (key.sequence === "a" && c.configSection() === "models") return void runActivate();
+    if (key.name === "up") {
+      consumeKey(key);
+      return c.moveConfigSelection(-1);
+    }
+    if (key.name === "down") {
+      consumeKey(key);
+      return c.moveConfigSelection(1);
+    }
+    if (key.sequence === "n" && c.configSection() === "models") {
+      consumeKey(key);
+      return c.newConfigModel();
+    }
+    if (key.sequence === "d" && c.configSection() === "models") {
+      consumeKey(key);
+      return void runDelete();
+    }
+    if (key.sequence === "a" && c.configSection() === "models") {
+      consumeKey(key);
+      return void runActivate();
+    }
     if (key.name === "return" || key.name === "enter" || key.sequence === "e") {
+      consumeKey(key);
       if (c.configSection() === "models") c.editConfigModel();
       else if (workflowPaneActive()) c.setConfigWorkflowPane("agents");
       else c.editConfigAgent();
@@ -246,22 +282,55 @@ function ModelFields(props: { controller: Controller; setStatus: (text: string) 
     props.setStatus(result.startsWith("Model test OK:") ? result : `Error: ${result}`);
   };
 
+  // Consume navigation/combo keys only — plain characters must reach the
+  // focused form input.
+  const consumeNavKey = (key: unknown) => {
+    const k = key as { preventDefault?: () => void; stopPropagation?: () => void };
+    k.preventDefault?.();
+    k.stopPropagation?.();
+  };
+
   useKeyboard((key: { name?: string; shift?: boolean; ctrl?: boolean }) => {
     if (!c.configOpen() || c.configStep() !== "model-fields") return;
-    if (key.name === "escape") return c.backToInterface();
-    if (key.name === "tab") return move(key.shift ? -1 : 1);
-    if (key.ctrl && key.name === "t") return void test();
+    if (key.name === "escape") {
+      consumeNavKey(key);
+      return c.backToInterface();
+    }
+    if (key.name === "tab") {
+      consumeNavKey(key);
+      return move(key.shift ? -1 : 1);
+    }
+    if (key.ctrl && key.name === "t") {
+      consumeNavKey(key);
+      return void test();
+    }
     if (focusedField()?.key === "apiMode") {
-      if (key.name === "left") return cycleApiMode(-1);
-      if (key.name === "right") return cycleApiMode(1);
+      if (key.name === "left") {
+        consumeNavKey(key);
+        return cycleApiMode(-1);
+      }
+      if (key.name === "right") {
+        consumeNavKey(key);
+        return cycleApiMode(1);
+      }
       if (key.name === "return" || key.name === "enter") {
+        consumeNavKey(key);
         props.setStatus(`API mode selected: ${c.modelDraft.apiMode}. Press Ctrl-S to save.`);
         return;
       }
     }
-    if (key.name === "up") return move(-1);
-    if (key.name === "down") return move(1);
-    if ((key.ctrl && key.name === "s") || key.name === "return" || key.name === "enter") return void save();
+    if (key.name === "up") {
+      consumeNavKey(key);
+      return move(-1);
+    }
+    if (key.name === "down") {
+      consumeNavKey(key);
+      return move(1);
+    }
+    if ((key.ctrl && key.name === "s") || key.name === "return" || key.name === "enter") {
+      consumeNavKey(key);
+      return void save();
+    }
   });
 
   return (
@@ -361,21 +430,51 @@ function AgentFields(props: { controller: Controller; setStatus: (text: string) 
     props.setStatus(err ? `Error: ${err}` : "Workflow agent saved.");
   };
 
+  // Consume navigation/combo keys only — plain characters must reach the
+  // focused form input.
+  const consumeNavKey = (key: unknown) => {
+    const k = key as { preventDefault?: () => void; stopPropagation?: () => void };
+    k.preventDefault?.();
+    k.stopPropagation?.();
+  };
+
   useKeyboard((key: { name?: string; shift?: boolean; ctrl?: boolean }) => {
     if (!c.configOpen() || c.configStep() !== "agent-fields") return;
-    if (key.name === "escape") return c.backToInterface();
-    if (key.name === "tab") return move(key.shift ? -1 : 1);
+    if (key.name === "escape") {
+      consumeNavKey(key);
+      return c.backToInterface();
+    }
+    if (key.name === "tab") {
+      consumeNavKey(key);
+      return move(key.shift ? -1 : 1);
+    }
     if (focusedField()?.key === "model") {
-      if (key.name === "left") return cycleAgentModel(-1);
-      if (key.name === "right") return cycleAgentModel(1);
+      if (key.name === "left") {
+        consumeNavKey(key);
+        return cycleAgentModel(-1);
+      }
+      if (key.name === "right") {
+        consumeNavKey(key);
+        return cycleAgentModel(1);
+      }
       if (key.name === "return" || key.name === "enter") {
+        consumeNavKey(key);
         props.setStatus(`Model selected: ${c.agentDraft.model || "default"}. Press Ctrl-S to save.`);
         return;
       }
     }
-    if (key.name === "up") return move(-1);
-    if (key.name === "down") return move(1);
-    if ((key.ctrl && key.name === "s") || key.name === "return" || key.name === "enter") return void save();
+    if (key.name === "up") {
+      consumeNavKey(key);
+      return move(-1);
+    }
+    if (key.name === "down") {
+      consumeNavKey(key);
+      return move(1);
+    }
+    if ((key.ctrl && key.name === "s") || key.name === "return" || key.name === "enter") {
+      consumeNavKey(key);
+      return void save();
+    }
   });
 
   return (

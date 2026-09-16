@@ -52,16 +52,23 @@ function writeAnalysisEvent(data: Record<string, unknown>): void {
   writer?.(data);
 }
 
+/** Word-boundary keyword test so e.g. "gapfill" does not match "gap". */
+function outputMentions(output: string, keywords: string[]): boolean {
+  const lower = output.toLowerCase();
+  return keywords.some((keyword) =>
+    new RegExp(`\\b${keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(lower),
+  );
+}
+
 /**
  * After surface: route to mapfill when coverage gaps remain (bounded by
  * gapfill_count), otherwise proceed to threatmap.
  */
 function surfaceRouterFromDecision(state: AuditStateType, decision: string): Command {
   const output = (state.stage_outputs ?? {}).surface ?? "";
-  const lower = output.toLowerCase();
-  const hasGaps = ["gap", "missing", "uncovered", "incomplete", "not covered", "unexplored"].some(
-    (k) => lower.includes(k),
-  );
+  const hasGaps = outputMentions(output, [
+    "gap", "gaps", "missing", "uncovered", "incomplete", "not covered", "unexplored",
+  ]);
   const count = state.gapfill_count ?? 0;
 
   if ((decision === "mapfill" || (!decision && hasGaps)) && count < DEFAULT_MAX_MAPFILL) {
@@ -86,10 +93,9 @@ function surfaceRouterFromDecision(state: AuditStateType, decision: string): Com
  */
 function reviewRouterFromDecision(state: AuditStateType, decision: string): Command {
   const output = (state.stage_outputs ?? {}).review ?? "";
-  const lower = output.toLowerCase();
-  const isWeak = ["weak", "insufficient", "inconsistent", "incomplete", "thin", "unsupported"].some(
-    (k) => lower.includes(k),
-  );
+  const isWeak = outputMentions(output, [
+    "weak", "insufficient", "inconsistent", "incomplete", "thin", "unsupported",
+  ]);
   const count = state.feedback_count ?? 0;
 
   if ((decision === "surface" || (!decision && isWeak)) && count < DEFAULT_MAX_REVIEW) {

@@ -562,6 +562,42 @@ export class EventTranslator {
       }
     }
 
+    if (eventSubtype === "subagent_error") {
+      const stageName = String(obj.name ?? "");
+      if (stageName && KNOWN_WORKFLOW_NODES.has(stageName)) {
+        if (this.activeStage === stageName) this.activeStage = null;
+        return [
+          new StreamEvent({
+            type: StreamEventType.STAGE_ERROR,
+            conversationId: this.conv,
+            turnId: this.turn,
+            payload: {
+              stage: stageName,
+              node_kind: workflowNodeKind(stageName),
+              error_text: String(obj.error ?? obj.message ?? ""),
+              result: "",
+            },
+            timestamp: nowSeconds(),
+          }),
+        ];
+      }
+      if (stageName) {
+        return [
+          new StreamEvent({
+            type: StreamEventType.SUBAGENT_ERROR,
+            conversationId: this.conv,
+            turnId: this.turn,
+            payload: {
+              subagent: stageName,
+              tool_call_id: String(obj.tool_call_id ?? ""),
+              error_text: String(obj.error ?? obj.message ?? ""),
+            },
+            timestamp: nowSeconds(),
+          }),
+        ];
+      }
+    }
+
     if (eventSubtype === "audit_route") {
       return [
         new StreamEvent({

@@ -368,8 +368,9 @@ export function makeSubagentNode(
       // Surface a completion so the UI does not hang on a perpetually-"running"
       // stage, and record the failure as this stage's output so downstream
       // stages and the final report can see what went wrong.
-      writer?.({ type: "subagent_complete", name });
       const msg = exc instanceof Error ? exc.message : String(exc);
+      writer?.({ type: "subagent_error", name, error: msg });
+      writer?.({ type: "subagent_complete", name });
       const newOutputs = { ...(state.stage_outputs ?? {}) };
       newOutputs[name] = `[stage ${name} failed: ${msg}]`;
       return { audit_task: auditTask, stage_outputs: newOutputs, current_stage: name };
@@ -426,6 +427,14 @@ function stringifyContent(content: unknown): string {
 // Routers
 // ---------------------------------------------------------------------------
 
+/** Word-boundary keyword test so e.g. "gapfill" does not match "gap". */
+function outputMentions(output: string, keywords: string[]): boolean {
+  const lower = output.toLowerCase();
+  return keywords.some((keyword) =>
+    new RegExp(`\\b${keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(lower),
+  );
+}
+
 /**
  * After validate: if candidates remain unresolved, branch to gapfill.
  * This is the validate⇄gapfill side-branch. `gapfill_count` bounds the whole
@@ -433,10 +442,9 @@ function stringifyContent(content: unknown): string {
  */
 function validateRouterFromDecision(state: AuditStateType, decision: string): Command {
   const output = (state.stage_outputs ?? {}).validate ?? "";
-  const lower = output.toLowerCase();
-  const hasGaps = ["needs-more", "needs more", "unresolved", "gap", "incomplete", "uncertain"].some(
-    (k) => lower.includes(k),
-  );
+  const hasGaps = outputMentions(output, [
+    "needs-more", "needs more", "unresolved", "gap", "gaps", "incomplete", "uncertain",
+  ]);
   const count = state.gapfill_count ?? 0;
 
   if ((decision === "gapfill" || (!decision && hasGaps)) && count < DEFAULT_MAX_GAPFILL) {
@@ -457,10 +465,9 @@ function validateRouterFromDecision(state: AuditStateType, decision: string): Co
 /** Gapfill decides where its requests go: re-hunt or re-validate. */
 function gapfillRouterFromDecision(state: AuditStateType, decision: string): Command {
   const output = (state.stage_outputs ?? {}).gapfill ?? "";
-  const lower = output.toLowerCase();
-  const wantsHunt = ["hunt", "search", "new candidate", "additional sink", "unexplored", "scan"].some(
-    (k) => lower.includes(k),
-  );
+  const wantsHunt = outputMentions(output, [
+    "hunt", "search", "new candidate", "additional sink", "unexplored", "scan",
+  ]);
   const target = decision || (wantsHunt ? "hunt" : "validate");
   writeAuditEvent({ type: "audit_route", from: "gapfill", to: target });
   return new Command({ goto: target });
@@ -473,10 +480,9 @@ function gapfillRouterFromDecision(state: AuditStateType, decision: string): Com
  */
 function feedbackRouterFromDecision(state: AuditStateType, decision: string): Command {
   const output = (state.stage_outputs ?? {}).feedback ?? "";
-  const lower = output.toLowerCase();
-  const isWeak = ["weak", "insufficient", "needs more", "speculative", "unconfirmed"].some((k) =>
-    lower.includes(k),
-  );
+  const isWeak = outputMentions(output, [
+    "weak", "insufficient", "needs more", "speculative", "unconfirmed",
+  ]);
   const count = state.feedback_count ?? 0;
 
   if ((decision === "hunt" || (!decision && isWeak)) && count < DEFAULT_MAX_FEEDBACK) {

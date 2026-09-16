@@ -35,17 +35,3 @@ export class AgentRunError extends SarmaRuntimeError {
     this.recoverable = recoverable;
   }
 }
-
-/** Database operation for runtime data failed. */
-export class PersistenceError extends SarmaRuntimeError {
-  readonly operation: string;
-
-  constructor(operation = "", detail = "") {
-    let msg = operation
-      ? `Runtime persistence failed: ${operation}`
-      : "Runtime persistence failed";
-    if (detail) msg += ` — ${detail}`;
-    super(msg);
-    this.operation = operation;
-  }
-}

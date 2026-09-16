@@ -131,9 +131,18 @@ function BrowseView(props: { controller: Controller; setStatus: (text: string) =
       consumeKey(key);
       return c.setRagSection(c.ragSection() === "model" ? "knowledge" : "search");
     }
-    if (key.sequence === "m") return c.setRagSection("model");
-    if (key.sequence === "k") return c.setRagSection("knowledge");
-    if (key.sequence === "s") return c.setRagSection("search");
+    if (key.sequence === "m") {
+      consumeKey(key);
+      return c.setRagSection("model");
+    }
+    if (key.sequence === "k") {
+      consumeKey(key);
+      return c.setRagSection("knowledge");
+    }
+    if (key.sequence === "s") {
+      consumeKey(key);
+      return c.setRagSection("search");
+    }
     if (key.name === "up") {
       consumeKey(key);
       return c.moveRagSelection(-1);

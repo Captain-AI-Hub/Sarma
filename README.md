@@ -247,10 +247,12 @@ START
   -> architecture
   -> surface
   -> surface_check
-       -> mapfill -> surface          (bounded by 3 mapfill rounds)
+       -> mapfill -> surface          (<= 3 mapfill rounds per review round)
        -> threatmap
   -> review
-  -> review_check -> surface | report  (bounded by 2 review rounds)
+  -> review_check -> surface | report  (<= 2 review rounds; each resets the
+                                        mapfill budget, so the total mapfill
+                                        bound is 3 per review round)
   -> END
 ```
 

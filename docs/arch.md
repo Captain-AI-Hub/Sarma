@@ -26,9 +26,10 @@ The main architecture is coherent and test-backed. The remaining concerns are mo
 | Session | `src/session.ts` | Conversation lifecycle, turn orchestration, compaction, persistence hooks, graph progress, runtime cleanup. |
 | Runtime policy | `src/runtime/resolver.ts`, `src/runtime/services.ts`, `src/runtime/middleware.ts`, `src/runtime/toolPolicy.ts` | Config-to-run resolution, LangGraph runtime services, middleware assembly, tool filtering policy. |
 | Engine | `src/engine/*` | DTO boundary, model construction, MCP pooling, tool assembly, agent build/cache, stream translation. |
-| Workflows | `src/workflows/*` | Ruflo delegation, full audit graph, slim audit graph, subagent specs, workflow registry. |
+| Workflows | `src/workflows/*` | Ruflo delegation, full audit graph, slim audit graph, analysis graph (architecture + attack surface), subagent specs, workflow registry, LangGraph Studio exports. |
 | Resources | `src/resources/*` | Built-in tools and external resource management: web, network, terminal, RAG, skills, SkillHub. |
 | Persistence/config | `src/config.ts`, `src/store.ts`, `src/paths.ts` | TOML config, global/workspace overlays, SQLite sessions/messages/tool traces/memory artifacts. |
+| Reports | `src/reports.ts` | Per-run markdown reports under `./.sarma/reports/` written after each successful turn. |
 | Context | `src/context/*` | Token estimation and structured context compaction. |
 | Tests | `tests/*` | Unit and integration coverage for engine, runtime, config, RAG, TUI, session, CLI. |
 
@@ -58,7 +59,7 @@ The main architecture is coherent and test-backed. The remaining concerns are mo
 4. `Session.compactContext()` checks the model context budget and replaces older history with structured memory if needed.
 5. `AgentRunner.run()` builds an `AgentRunConfig`, builds or reuses a compiled agent, and streams LangGraph chunks.
 6. `EventTranslator` converts LangGraph message/update/custom chunks to `StreamEvent`s.
-7. `Session` persists user/assistant messages and tool execution summaries into `Store`.
+7. `Session` persists user/assistant messages and tool execution summaries into `Store`, then writes the per-run markdown report (stage outputs + final answer) under `./.sarma/reports/`.
 8. TUI or CLI renderers consume the same normalized event model.
 
 ### Agent construction
@@ -72,6 +73,7 @@ The main architecture is coherent and test-backed. The remaining concerns are mo
    - `ruflo`: LangChain `createAgent()` plus `delegate_task`.
    - `audit`: full LangGraph audit pipeline.
    - `audit-slim`: compact LangGraph audit pipeline.
+   - `analysis`: architecture audit + attack-surface pipeline (read-only tool filters, no vulnerability validation).
 
 ## Key Boundaries And Decisions
 
@@ -118,9 +120,9 @@ Durable user-facing state is in workspace SQLite via `Store`. LangGraph checkpoi
 
 ## Current Risks And Recommendations
 
-### 1. `src/tui/controller.ts` is still a god object
+### 1. `src/tui/controller.ts` remains the main maintenance hotspot
 
-The controller is over 3,000 lines and owns command parsing, session projection, config drafts, plugin state, RAG state, workflow graph views, and TUI action routing. Helper extractions exist, but the main module remains the highest-risk maintenance point.
+The controller is around 2,900 lines and owns command parsing, session projection, config drafts, plugin state, RAG state, workflow graph views, and TUI action routing. Helper extractions exist, but the main module remains the highest-risk maintenance point.
 
 Recommendation: split by surface:
 
@@ -157,7 +159,7 @@ Recommendation: introduce a workflow builder registry only when workflows become
 
 ### 5. Middleware tool count is static
 
-`MIDDLEWARE_TOOL_COUNT = 13` is a static estimate used for context budgeting. It can drift from the actual tools exposed by dependency middleware versions.
+`MIDDLEWARE_TOOL_COUNT` in toolPolicy.ts is a static estimate used for context budgeting. It can drift from the actual tools exposed by dependency middleware versions.
 
 Recommendation: add a runtime inspection path or a focused test that asserts the estimate is conservative enough for the installed middleware set.
 

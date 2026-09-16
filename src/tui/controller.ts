@@ -47,6 +47,7 @@ import { createDraftBuffer } from "@/tui/draftBuffer";
 import { createReports, formatList, mcpTarget } from "@/tui/reports";
 import {
   messageContentText,
+  parseBoolField,
   parseContextSize,
   truncateStatus,
 } from "@/tui/controllerHelpers";
@@ -1330,7 +1331,7 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
   }
 
   function parseBool(value: string): boolean {
-    return !["0", "false", "no", "off", "disabled"].includes(value.trim().toLowerCase());
+    return parseBoolField(value, true);
   }
 
   function workflowAgentNames(): string[] {
@@ -1846,7 +1847,8 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
     } catch (exc) {
       return exc instanceof Error ? exc.message : String(exc);
     }
-    await restartRuntime();
+    const restartError = await restartSessionRuntime();
+    if (restartError) return restartError;
     setConfigVersion((v) => v + 1);
     setPluginStep("browse");
     const idx = pluginMcpRows().findIndex((row) => row.name === name);
@@ -1907,7 +1909,8 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
     } catch (exc) {
       return exc instanceof Error ? exc.message : String(exc);
     }
-    await restartRuntime();
+    const restartError = await restartSessionRuntime();
+    if (restartError) return restartError;
     setConfigVersion((v) => v + 1);
     setPluginStep("browse");
     const idx = pluginSkillRows().findIndex((row) => row.name === installedName);
@@ -1948,7 +1951,8 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
         if (!agent.skills.includes(skillName)) agent.skills.push(skillName);
         saveAgents(config);
       }
-      await restartRuntime();
+      const restartError = await restartSessionRuntime();
+      if (restartError) return restartError;
       setConfigVersion((v) => v + 1);
       setPluginStep("browse");
       setPluginSectionSig("skills");
@@ -1975,7 +1979,8 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
       } catch (exc) {
         return exc instanceof Error ? exc.message : String(exc);
       }
-      await restartRuntime();
+      const restartError = await restartSessionRuntime();
+      if (restartError) return restartError;
       setConfigVersion((v) => v + 1);
       note(`MCP "${server.name}" ${server.enabled ? "enabled" : "disabled"} -> ${savedPath}`);
       return null;
@@ -1999,7 +2004,8 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
     } catch (exc) {
       return exc instanceof Error ? exc.message : String(exc);
     }
-    await restartRuntime();
+    const restartError = await restartSessionRuntime();
+    if (restartError) return restartError;
     setConfigVersion((v) => v + 1);
     note(`skill "${row.name}" ${pluginSkillRows()[pluginSelectedIndex()]?.enabled ? "enabled" : "disabled"} for ${workflow()} -> ${savedPath}`);
     return null;
@@ -2033,6 +2039,9 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
     if (!["add", "enable", "disable"].includes(normalizedAction) || !["mcp", "skill"].includes(normalizedKind) || !pluginName) {
       return reports.pluginReport();
     }
+    // Mutating plugin config mid-turn writes files while the running agent
+    // still uses the old runtime; refuse like the overlay panel paths do.
+    if (busy()) return "Cannot change plugins while a turn is running.";
     const scopeFlag = rest.includes("--global") ? "global" : "local";
     const targetParts = rest.filter((part) => part !== "--global" && part !== "--local");
 
@@ -2057,14 +2066,16 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
         const previousScope = existing ? mcpServerScope(pluginName) : targetScope;
         if (previousScope !== targetScope) removeMcpServerFromScope(pluginName, previousScope);
         const savedPath = saveMcpServerToScope(server, targetScope);
-        await restartRuntime();
+        const restartError = await restartSessionRuntime();
+        if (restartError) return restartError;
         return `MCP ${pluginName} enabled.\nsaved: ${savedPath}`;
       } else {
         if (!existing) return `unknown MCP server: ${pluginName}`;
         const server = cloneMcpServer(existing);
         server.enabled = normalizedAction === "enable";
         const savedPath = saveMcpServerToScope(server, mcpServerScope(pluginName));
-        await restartRuntime();
+        const restartError = await restartSessionRuntime();
+        if (restartError) return restartError;
         return `MCP ${pluginName} ${normalizedAction === "disable" ? "disabled" : "enabled"}.\nsaved: ${savedPath}`;
       }
     }
@@ -2093,7 +2104,8 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
       if (!agent.skills.includes(pluginName)) agent.skills.push(pluginName);
     }
     const savedPath = saveAgents(config);
-    await restartRuntime();
+    const restartError = await restartSessionRuntime();
+    if (restartError) return restartError;
     return `skill ${pluginName} ${normalizedAction === "disable" ? "disabled" : "enabled"} for ${workflow()}.\nsaved: ${savedPath}`;
   }
 
@@ -2285,7 +2297,8 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
     } catch (exc) {
       return exc instanceof Error ? exc.message : String(exc);
     }
-    await restartRuntime();
+    const restartError = await restartSessionRuntime();
+    if (restartError) return restartError;
     setRagVersion((v) => v + 1);
     setRagStep("browse");
     note(`Saved RAG model settings -> ${savedPath}`);
@@ -2310,7 +2323,8 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
     } catch (exc) {
       return exc instanceof Error ? exc.message : String(exc);
     }
-    await restartRuntime();
+    const restartError = await restartSessionRuntime();
+    if (restartError) return restartError;
     setRagVersion((v) => v + 1);
     setRagStep("browse");
     const idx = ragKnowledgeBaseRows().findIndex((row) => row.name === draft.kb!.name);
@@ -2334,7 +2348,8 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
     } catch (exc) {
       return exc instanceof Error ? exc.message : String(exc);
     }
-    await restartRuntime();
+    const restartError = await restartSessionRuntime();
+    if (restartError) return restartError;
     setRagVersion((v) => v + 1);
     note(`RAG knowledge base "${kb.name}" ${kb.enabled ? "enabled" : "disabled"} -> ${savedPath}`);
     return null;
@@ -2353,7 +2368,8 @@ export function createController(config: CliConfig, workflowNames: string[]): Co
     } catch (exc) {
       return exc instanceof Error ? exc.message : String(exc);
     }
-    await restartRuntime();
+    const restartError = await restartSessionRuntime();
+    if (restartError) return restartError;
     setRagVersion((v) => v + 1);
     setRagSelectedIndex(0);
     note(`Deleted RAG knowledge base "${kb.name}" -> ${savedPath}`);

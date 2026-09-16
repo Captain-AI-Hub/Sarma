@@ -49,6 +49,16 @@ function subagentModels(plan: RunPlan): Record<string, BaseChatModel> {
   return models;
 }
 
+/**
+ * One shared MCP pool for all exported graphs (each `buildWorkflowGraph`
+ * connects the same server set; separate pools would leak one stdio child
+ * per graph for the process lifetime). Disconnected on process shutdown.
+ */
+const studioPool = new McpClientPool();
+process.on("beforeExit", () => {
+  void studioPool.disconnect().catch(() => {});
+});
+
 async function toolsForPlan(plan: RunPlan): Promise<StructuredToolInterface[]> {
   let mcpTools: StructuredToolInterface[] = [];
   if (ENABLE_MCP && plan.enabledServers.length > 0) {
@@ -56,7 +66,7 @@ async function toolsForPlan(plan: RunPlan): Promise<StructuredToolInterface[]> {
     for (const server of plan.enabledServers) {
       serverConfigs[server.name] = server.toLangchainConfig();
     }
-    mcpTools = await new McpClientPool().connect(serverConfigs);
+    mcpTools = await studioPool.connect(serverConfigs);
   }
   return filterToolsBySkill([...mcpTools, ...builtinTools()], plan.skill);
 }
@@ -127,7 +137,18 @@ async function buildWorkflowGraph(mode: WorkflowName): Promise<CompiledGraph> {
   return graph as unknown as CompiledGraph;
 }
 
-export const ruflo = await buildWorkflowGraph("ruflo");
-export const audit = await buildWorkflowGraph("audit");
-export const auditSlim = await buildWorkflowGraph("audit-slim");
-export const analysis = await buildWorkflowGraph("analysis");
+// Build all graphs concurrently (they share one MCP pool connect through the
+// serialized queue). Note: a fatal config error still fails the whole module —
+// LangGraph Studio expects real compiled graphs, so a broken stub would be
+// worse than a loud load failure.
+const [rufloGraph, auditGraph, auditSlimGraph, analysisGraph] = await Promise.all([
+  buildWorkflowGraph("ruflo"),
+  buildWorkflowGraph("audit"),
+  buildWorkflowGraph("audit-slim"),
+  buildWorkflowGraph("analysis"),
+]);
+
+export const ruflo = rufloGraph;
+export const audit = auditGraph;
+export const auditSlim = auditSlimGraph;
+export const analysis = analysisGraph;

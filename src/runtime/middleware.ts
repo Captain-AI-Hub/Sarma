@@ -102,9 +102,19 @@ export function sarmaModelRetryMiddleware(options: { maxRetries?: number } = {})
 }
 
 function isAbortError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  if (error.name === "AbortError" || error.name === "TimeoutError") return true;
-  return /abort/i.test(error.message);
+  // Walk the cause chain: providers and fetch wrappers nest the original
+  // AbortError one or two levels down.
+  let current: unknown = error;
+  while (current instanceof Error) {
+    if (current.name === "AbortError") return true;
+    // Match explicit cancellation phrasings only — a message that merely
+    // contains "abort" (e.g. "connection aborted by proxy") may be transient.
+    if (/^(aborted|run cancelled|operation (was )?aborted|signal is aborted)/i.test(current.message.trim())) {
+      return true;
+    }
+    current = current.cause;
+  }
+  return false;
 }
 
 function delay(ms: number): Promise<void> {

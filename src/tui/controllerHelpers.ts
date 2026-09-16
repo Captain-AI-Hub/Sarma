@@ -4,6 +4,18 @@ import { tryParseContextWindow } from "@/config";
 // controller imports them from there directly. This module keeps only
 // TUI-specific formatting/parsing helpers.
 
+/**
+ * Parse a form/TOML boolean field. Unrecognized input falls back to `dflt`:
+ * MCP/skill/KB enable toggles default to enabled; model profiles default to
+ * disabled (callers pass the domain default explicitly).
+ */
+export function parseBoolField(value: string, dflt = true): boolean {
+  const v = value.trim().toLowerCase();
+  if (["1", "true", "yes", "y", "on", "enabled"].includes(v)) return true;
+  if (["0", "false", "no", "n", "off", "disabled"].includes(v)) return false;
+  return dflt;
+}
+
 export function parseContextSize(raw: string): number | null {
   return tryParseContextWindow(raw);
 }

@@ -35,13 +35,36 @@ export function ModelPicker(props: { controller: Controller }) {
     c.openConfig();
   };
 
+  // Consume handled keys so they do not leak into the always-focused chat
+  // input behind the overlay.
+  const consumeKey = (key: unknown) => {
+    const k = key as { preventDefault?: () => void; stopPropagation?: () => void };
+    k.preventDefault?.();
+    k.stopPropagation?.();
+  };
+
   useKeyboard((key: { name?: string; sequence?: string }) => {
     if (!c.modelPickerOpen()) return;
-    if (key.name === "escape") return c.closeModelPicker();
-    if (key.name === "up") return c.moveModelPickerSelection(-1);
-    if (key.name === "down") return c.moveModelPickerSelection(1);
-    if (key.sequence === "c") return openConfig();
-    if (key.name === "return" || key.name === "enter") return void activate();
+    if (key.name === "escape") {
+      consumeKey(key);
+      return c.closeModelPicker();
+    }
+    if (key.name === "up") {
+      consumeKey(key);
+      return c.moveModelPickerSelection(-1);
+    }
+    if (key.name === "down") {
+      consumeKey(key);
+      return c.moveModelPickerSelection(1);
+    }
+    if (key.sequence === "c") {
+      consumeKey(key);
+      return openConfig();
+    }
+    if (key.name === "return" || key.name === "enter") {
+      consumeKey(key);
+      return void activate();
+    }
   });
 
   return (

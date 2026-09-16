@@ -32,15 +32,16 @@ Sarma is a terminal vulnerability-audit agent. It combines:
 | Root | Package and project metadata. | `package.json`, `tsconfig.json`, `eslint.config.js`, `README.md`, `bunfig.toml` | Defines Bun CLI package, scripts, TypeScript aliases, lint/typecheck/test commands. |
 | `src/index.ts` | Command-line entry adapter. | `index.ts` | Parses yargs commands, loads config, lazily imports TUI transform/runtime, dispatches to CLI/TUI/RAG/session commands. |
 | `src/cli/` | Line-based CLI surfaces. | `app.ts`, `renderer.ts`, `ragCommand.ts` | Creates `Session`, sends user turns, renders `StreamEvent`s, manages plain slash commands, prints sessions/workflows/RAG status. |
-| `src/tui/` | Full-screen UI layer. | `app.tsx`, `controller.ts`, `index.ts`, panels/components | `createController()` owns UI state/actions; Solid components render controller snapshots; session events update transcript, graph, tools, config/plugin/RAG panels. |
+| `src/tui/` | Full-screen UI layer. | `app.tsx`, `controller.ts`, `index.ts`, `reports.ts`, `draftBuffer.ts`, `controllerHelpers.ts`, `modelConfigHelpers.ts`, panels/components | `createController()` owns UI state/actions; `tui/reports.ts` builds slash-command status reports; `tui/draftBuffer.ts` batches streamed tokens; Solid components render controller snapshots. |
 | `src/session.ts` | Runtime lifecycle service. | `session.ts` | Resolves run policy, connects MCP, compacts context, builds `AgentRunner`, persists messages/tool traces, tracks graph stage progress, owns cancellation and cleanup. |
 | `src/runtime/` | Runtime planning, services, middleware, tool policy. | `resolver.ts`, `services.ts`, `middleware.ts`, `toolPolicy.ts` | Converts `CliConfig` to `RunPlan`, creates LangGraph checkpointer/store and terminal manager, builds filesystem/shell/terminal/retry/summarization middleware, filters explicit tools. |
 | `src/engine/` | Agent execution core. | `agentFactory.ts`, `agentRunner.ts`, `mcpPool.ts`, `modelFactory.ts`, `streaming.ts`, `dto.ts`, `models.ts`, `toolAssembler.ts` | Normalizes config with DTOs, manages MCP clients, creates models, assembles tools, builds workflow graphs/agents, streams events to UI/CLI. |
-| `src/workflows/` | Agent workflow definitions. | `ruflo.ts`, `auditGraph.ts`, `auditSlimGraph.ts`, `auditSubagents.ts`, `auditSlimSubagents.ts`, `index.ts` | Defines Ruflo delegation, full audit graph, slim audit graph, subagent specs/prompts, workflow metadata used by resolver/UI. |
+| `src/workflows/` | Agent workflow definitions. | `ruflo.ts`, `auditGraph.ts`, `auditSlimGraph.ts`, `analysisGraph.ts`, `auditSubagents.ts`, `auditSlimSubagents.ts`, `analysisSubagents.ts`, `index.ts`, `langgraphStudio.ts` | Defines Ruflo delegation, full/slim audit graphs, analysis graph (architecture + attack surface), subagent specs/prompts, workflow metadata used by resolver/UI, and LangGraph Studio graph exports (registered in `langgraph.json`). |
 | `src/resources/` | Built-in resource tools and installers. | `webTools.ts`, `networkTools.ts`, `terminalTools.ts`, `rag.ts`, `skills.ts`, `skillshub.ts` | Builds local tools, handles HTTP/fetch/network probing, persistent terminal sessions, RAG chunk/search, local skill discovery/install, SkillHub search/install. |
 | `src/context/` | Context budget and compaction. | `compaction.ts`, `tokenizer.ts` | Estimates token budgets, plans compaction, creates structured memory messages, supports model-window-aware history reduction. |
 | `src/config.ts` | Config schema, loading, merging, saving. | `config.ts` | Ensures `~/.sarma` and `./.sarma`, parses TOML, merges global/local MCP and RAG, persists models/agents/MCP/RAG. |
 | `src/store.ts` | Workspace SQLite persistence. | `store.ts` | Creates/migrates `./.sarma/db.sqlite`, stores conversations, messages, tool executions, memory artifacts. |
+| `src/reports.ts` | Per-run markdown report writer. | `reports.ts` | Renders and writes `./.sarma/reports/<timestamp>-<workflow>-<turnId>.md` after each successful turn (stage outputs + final report). |
 | `src/paths.ts` | Path policy. | `paths.ts` | Centralizes global/workspace paths for config, skills, RAG, DB, history. |
 | `src/debug.ts` | Debug logging. | `debug.ts` | Debug flag, debug log file, global process error handlers. |
 | `tests/` | Verification suite. | `*.test.ts`, `fixtures/*` | Tests config, engine, runtime, session, RAG, TUI, streaming, CLI, mocked MCP servers. |
@@ -78,7 +79,7 @@ Sarma is a terminal vulnerability-audit agent. It combines:
 2. `AgentFactory.build()` connects MCP and assembles tools.
 3. `ToolAssembler` appends built-ins: `web_search`, `fetch_url`, `http_exchange`, `packet_exchange`, optional `rag_search`.
 4. `filterToolsBySkill()` applies skill allow/deny lists to explicit MCP and built-in tools.
-5. `AgentFactory` chooses Ruflo, full audit, or slim audit construction.
+5. `AgentFactory` chooses Ruflo, full audit, slim audit, or analysis construction.
 6. LangGraph stream chunks are translated to `StreamEvent`s.
 7. Audit modes capture `stage_outputs.report` as final persisted assistant content.
 
@@ -111,7 +112,7 @@ Sarma is a terminal vulnerability-audit agent. It combines:
 - Registry: `workflows/index.ts` stores workflow metadata; `toolPolicy.ts` stores built-in tool names.
 - Presenter/controller: TUI controller projects runtime/session state to view models.
 - Repository/DAO: `Store` encapsulates SQLite schema and persistence operations.
-- Strategy: workflow mode selects Ruflo, full audit graph, or slim audit graph.
+- Strategy: workflow mode selects Ruflo, full audit graph, slim audit graph, or analysis graph.
 - Observer/stream: `StreamEvent`s decouple LangGraph streaming from UI and CLI rendering.
 
 ## Hotspots

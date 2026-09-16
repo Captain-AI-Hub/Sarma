@@ -178,8 +178,11 @@ export class Session {
   }
 
   resumeConversation(cid: string): boolean {
+    // A conversation whose first turn died early (e.g. at MCP connect, before
+    // the user message was persisted) exists but has zero messages — resuming
+    // it must not report "not found".
+    if (!this.store.getConversation(cid)) return false;
     const messages = this.store.loadMessages(cid);
-    if (messages.length === 0) return false;
     this._conversationId = cid;
     this._history = messages.map(
       (m) =>
@@ -192,6 +195,7 @@ export class Session {
           reasoningContent: m.reasoning ?? null,
         }),
     );
+    this.resetGraphState();
     this.runtimeServices.setConversationId(this._conversationId);
     return true;
   }
@@ -369,8 +373,25 @@ export class Session {
       yield makeRunCompletedEvent(this._conversationId, turnId, finalContent, reportPath);
     } catch (exc) {
       const message = abortController.signal.aborted ? "Run cancelled." : exc instanceof Error ? exc.message : String(exc);
+      // An aborted/failed run can leave a partial superstep checkpointed on
+      // this thread (e.g. an AIMessage with tool_calls and no results), which
+      // providers reject on the next request. Bump the epoch so the next turn
+      // seeds full history onto a fresh thread instead of merging with the
+      // poisoned one.
+      this.checkpointEpoch += 1;
       yield makeRunFailedEvent(this._conversationId, turnId, message);
     } finally {
+      // Cancelled or failed runs drop the turn-local correlation map; close
+      // out any still-'started' tool rows so the DB has no eternal pending
+      // executions.
+      for (const id of toolExecutionIds.values()) {
+        try {
+          this.store.finishToolExecution(id, "cancelled", null, "Run cancelled.");
+        } catch {
+          /* best-effort reconcile */
+        }
+      }
+      toolExecutionIds.clear();
       if (this.currentRunAbort === abortController) this.currentRunAbort = null;
     }
   }

@@ -9,7 +9,7 @@
 import { ConversationMessage } from "@/engine/models";
 import type { TokenEstimator } from "@/context/tokenizer";
 
-export type Summarizer = (messages: ConversationMessage[]) => Promise<string>;
+type Summarizer = (messages: ConversationMessage[]) => Promise<string>;
 
 export interface ContextWindowPolicyInit {
   maxContextTokens: number;
@@ -60,7 +60,7 @@ export class ContextWindowPolicy {
 }
 
 /** A deterministic split of history into structured memory and raw tail. */
-export interface CompactionPlan {
+interface CompactionPlan {
   shouldCompact: boolean;
   keepTail: ConversationMessage[];
   older: ConversationMessage[];

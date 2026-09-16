@@ -37,7 +37,7 @@ export interface Theme {
 }
 
 /** kilo (dark) — the default Sarma theme. */
-export const kiloDark: Theme = {
+const kiloDark: Theme = {
   background: "#0c0a09",
   backgroundPanel: "#1c1917",
   backgroundElement: "#292524",

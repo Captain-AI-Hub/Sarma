@@ -80,7 +80,8 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
  * provides health-check / reconnect on failure.
  */
 export class McpClientPool {
-  private clients: MultiServerMCPClient[] = [];
+  private clients = new Map<string, MultiServerMCPClient>();
+  private toolsByServer = new Map<string, StructuredToolInterface[]>();
   private serverConfigs: ServerConfigs = {};
   private fingerprint = "";
   private toolList: StructuredToolInterface[] = [];
@@ -89,9 +90,10 @@ export class McpClientPool {
   /** Serializes connect/disconnect so concurrent callers cannot leak clients. */
   private queue: Promise<unknown> = Promise.resolve();
   /**
-   * Bumped every time the pool actually rebuilds its clients. Compiled agents
-   * embed tool objects bound to the current clients, so agent caches must key
-   * on this generation to avoid holding tools bound to closed connections.
+   * Bumped every time the pool actually rebuilds or extends its client set.
+   * Compiled agents embed tool objects bound to the current clients, so agent
+   * caches must key on this generation to avoid holding tools bound to closed
+   * connections.
    */
   private generationCounter = 0;
 
@@ -142,6 +144,13 @@ export class McpClientPool {
       return this.toolList;
     }
 
+    // Same configuration with some failed servers: retry only the failed
+    // ones. Tearing down healthy clients on every turn because one server
+    // is down would rebuild the whole compiled agent graph each time.
+    if (this.connected && fingerprint && fingerprint === this.fingerprint) {
+      return this.reconnectFailedExclusive(serverConfigs);
+    }
+
     await this.disconnectExclusive();
     this.generationCounter += 1;
 
@@ -163,32 +172,72 @@ export class McpClientPool {
     const results = await Promise.all(
       Object.entries(serverConfigs).map(([name, config]) => connectOneServer(name, config)),
     );
-    const tools = results.flatMap((result) => result.tools);
-    const statuses = new Map(results.map((result) => [result.status.name, result.status]));
     const errors = results.filter((result) => result.error).map((result) => result.error!);
-    const successCount = results.filter((result) => result.client !== null).length;
-    this.clients = results.flatMap((result) => (result.client ? [result.client] : []));
+    this.applyConnectResults(results);
 
-    this.statuses = statuses;
-    this.toolList = tools;
-    this.connected = successCount > 0;
     if (this.connected) return this.toolList;
 
     await this.disconnectExclusive();
     this.serverConfigs = { ...serverConfigs };
-    this.statuses = statuses;
+    this.statuses = new Map(results.map((result) => [result.status.name, result.status]));
     throw new McpConnectionError(Object.keys(serverConfigs).join(", "), errors.join("; "));
   }
 
+  /** Retry the currently-failed servers, keeping healthy clients alive. */
+  private async reconnectFailedExclusive(serverConfigs: ServerConfigs): Promise<StructuredToolInterface[]> {
+    const failedNames = [...this.statuses.values()].filter((s) => !s.connected).map((s) => s.name);
+    const results = await Promise.all(
+      failedNames
+        .filter((name) => serverConfigs[name] !== undefined)
+        .map((name) => connectOneServer(name, serverConfigs[name]!)),
+    );
+
+    let recovered = false;
+    for (const result of results) {
+      this.statuses.set(result.status.name, result.status);
+      if (result.client !== null) {
+        this.clients.set(result.status.name, result.client);
+        this.toolsByServer.set(result.status.name, result.tools);
+        recovered = true;
+      }
+    }
+
+    if (recovered) {
+      // New client objects exist alongside the healthy ones; cached agents
+      // must be rebuilt against the new tool set.
+      this.generationCounter += 1;
+      this.refreshToolList();
+    }
+    return this.toolList;
+  }
+
+  private applyConnectResults(results: ServerConnectResult[]): void {
+    const statuses = new Map(results.map((result) => [result.status.name, result.status]));
+    this.clients = new Map(
+      results.flatMap((result) => (result.client ? [[result.status.name, result.client] as const] : [])),
+    );
+    this.toolsByServer = new Map(
+      results.map((result) => [result.status.name, result.tools] as const),
+    );
+    this.statuses = statuses;
+    this.refreshToolList();
+    this.connected = this.clients.size > 0;
+  }
+
+  private refreshToolList(): void {
+    this.toolList = [...this.toolsByServer.values()].flat();
+  }
+
   private async disconnectExclusive(): Promise<void> {
-    for (const client of this.clients) {
+    for (const client of this.clients.values()) {
       try {
         await client.close();
       } catch {
         /* best-effort close */
       }
     }
-    this.clients = [];
+    this.clients = new Map();
+    this.toolsByServer = new Map();
     this.toolList = [];
     this.connected = false;
     this.fingerprint = "";

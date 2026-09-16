@@ -13,7 +13,7 @@ Development command: `bun run sarma`
 | Option | Alias | Description |
 | --- | --- | --- |
 | `--message <text>` | `-c` | Run one non-interactive user message. |
-| `--workflow <name>` | `-w` | Select workflow for this run: `ruflo`, `audit`, or `audit-slim`. |
+| `--workflow <name>` | `-w` | Select workflow for this run: `ruflo`, `audit`, `audit-slim`, or `analysis`. |
 | `--plain` | | Use the line-based REPL instead of the full-screen TUI. |
 | `--help` | `-h` | Show CLI help. |
 | `--version` | | Print package version from `package.json`. |
@@ -134,7 +134,7 @@ mcp = ["ida-mcp"]
 skills = ["*"]
 ```
 
-Agent names can target a workflow (`ruflo`, `audit`, `audit-slim`) or a workflow subagent (`audit.recon`, `audit-slim.verify`). `mcp = ["*"]` allows all enabled MCP servers. `skills = ["*"]` loads all available skills.
+Agent names can target a workflow (`ruflo`, `audit`, `audit-slim`, `analysis`) or a workflow subagent (`audit.recon`, `analysis.surface`). `mcp = ["*"]` allows all enabled MCP servers. `skills = ["*"]` loads all available skills.
 
 ### MCP Config
 
@@ -185,6 +185,7 @@ Knowledge base backend values:
 | `ruflo` | ReAct primary agent with `delegate_task` | None registered as workflow stages. |
 | `audit` | Full LangGraph vulnerability audit pipeline | `recon`, `hunt`, `validate`, `gapfill`, `dedupe`, `trace`, `feedback`, `report`. |
 | `audit-slim` | Compact LangGraph audit pipeline | `recon`, `hunter`, `verify`, `report`. |
+| `analysis` | LangGraph architecture audit + attack-surface pipeline (read-only tool filters) | `survey`, `architecture`, `surface`, `mapfill`, `threatmap`, `review`, `report`. |
 
 ## Built-In Agent Tools
 
@@ -234,7 +235,7 @@ Event type constants are defined in `src/engine/enums.ts`:
 | `skill_triggered` | Skill activation event. |
 | `stage_start` | Audit workflow stage started. |
 | `stage_complete` | Audit workflow stage completed. |
-| `stage_error` | Audit workflow stage failed. |
+| `stage_error` | Audit/analysis workflow stage failed (emitted on subagent failure; aborts are surfaced via `run_failed`). |
 | `subagent_start` | Subagent started. |
 | `subagent_complete` | Subagent completed. |
 | `subagent_error` | Subagent failed. |

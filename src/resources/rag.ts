@@ -322,15 +322,33 @@ function openChunkDbChecked(persistDirectory: string): Database {
   const dbFile = join(persistDirectory, "chroma.sqlite3");
   const dbExisted = existsSync(dbFile);
   mkdirSync(persistDirectory, { recursive: true });
-  const db = new Database(dbFile);
-  db.run("PRAGMA journal_mode = WAL;");
-  if (dbExisted && !hasChunksTable(db)) {
-    db.close();
+  let db: Database | null = null;
+  try {
+    db = new Database(dbFile);
+    // Inspect before any PRAGMA write: a foreign database must be refused
+    // without flipping its journal-mode header bit.
+    if (dbExisted && !hasChunksTable(db)) {
+      db.close();
+      db = null;
+      throw new Error(
+        `Refusing to write chunks: ${dbFile} exists but is not a Sarma chunk database. ` +
+          "Point chroma_path at an empty directory or a Sarma-created persist directory.",
+      );
+    }
+  } catch (exc) {
+    if (exc instanceof Error && exc.message.startsWith("Refusing to write chunks:")) throw exc;
+    // Non-sqlite file or unreadable database — surface a clean error instead
+    // of leaking the handle.
+    try {
+      db?.close();
+    } catch {
+      /* already closed or never opened */
+    }
     throw new Error(
-      `Refusing to write chunks: ${dbFile} exists but is not a Sarma chunk database. ` +
-        "Point chroma_path at an empty directory or a Sarma-created persist directory.",
+      `Cannot open RAG chunk database ${dbFile}: ${exc instanceof Error ? exc.message : String(exc)}`,
     );
   }
+  db.run("PRAGMA journal_mode = WAL;");
   db.run(CHUNK_SCHEMA);
   return db;
 }

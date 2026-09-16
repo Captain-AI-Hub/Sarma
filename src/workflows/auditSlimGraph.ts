@@ -40,6 +40,14 @@ function writeAuditEvent(data: Record<string, unknown>): void {
   writer?.(data);
 }
 
+/** Word-boundary keyword test so substrings of normal prose don't match. */
+function outputMentions(output: string, keywords: string[]): boolean {
+  const lower = output.toLowerCase();
+  return keywords.some((keyword) =>
+    new RegExp(`\\b${keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(lower),
+  );
+}
+
 /** Route weak verify results back to Hunter, or confirmed results to Report. */
 function verifyRouterFromDecision(state: AuditStateType, decision: string): Command {
   const output = (state.stage_outputs ?? {}).verify ?? "";
@@ -48,7 +56,7 @@ function verifyRouterFromDecision(state: AuditStateType, decision: string): Comm
   const count = state.feedback_count ?? 0;
   const needsHunter =
     normalized.startsWith("needs-hunter") ||
-    [
+    outputMentions(output, [
       "needs-hunter",
       "needs hunter",
       "not reliable",
@@ -57,7 +65,7 @@ function verifyRouterFromDecision(state: AuditStateType, decision: string): Comm
       "unsupported",
       "false positive",
       "weak",
-    ].some((marker) => lower.includes(marker));
+    ]);
 
   if (
     (decision === "hunter" ||

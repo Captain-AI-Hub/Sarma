@@ -569,7 +569,9 @@ function writeToml(target: string, data: Record<string, unknown>, header: string
   const headerText = header.length ? header.join("\n") + "\n\n" : "";
   const body = stringifyToml(data);
   const content = (headerText + body).replace(/\s+$/, "") + "\n";
-  const tmp = join(dirname(target), `.${basename(target)}.tmp`);
+  // Unique temp name: concurrent saves to the same target must not clobber
+  // each other's partial writes before the rename.
+  const tmp = join(dirname(target), `.${basename(target)}.${process.pid}-${Date.now()}.tmp`);
   writeFileSync(tmp, content, { encoding: "utf-8", mode: 0o600 });
   renameSync(tmp, target);
   return target;

@@ -4,7 +4,7 @@
  * These are the only types that should cross the config → engine boundary.
  */
 
-export interface ModelProviderInit {
+interface ModelProviderInit {
   id: number | null;
   name: string;
   modelName: string;
@@ -58,7 +58,7 @@ export class ModelProviderDTO {
   }
 }
 
-export interface McpServerInit {
+interface McpServerInit {
   id: number | null;
   name: string;
   transport: string;
